@@ -13,6 +13,7 @@ bin/
 *.user
 *.userprefs
 *.cache
+*.sln
 
 # IDE
 .vscode/
@@ -20,11 +21,19 @@ bin/
 
 # Node modules (for token generation)
 node_modules/
+package-lock.json
 
 # Test files
 test_*.gd
 test_*.gd.uid
 
+# Godot UID files
+*.uid
+
 # Build outputs
 *.dll
 *.pdb
+
+# Android
+android/
+
