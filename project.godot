@@ -16,8 +16,12 @@ This demo is divided in 4 parts.
 The protocol is text based, and composed by a command and possibly
 multiple payload arguments, each separated by a new line."
 config/tags=PackedStringArray("demo", "network", "official")
-run/main_scene="res://demo/main.tscn"
-config/features=PackedStringArray("4.4")
+run/main_scene="res://demo/ClientUI.tscn"
+config/features=PackedStringArray("4.4", "C#")
+
+[audio]
+
+driver/enable_input=true
 
 [debug]
 

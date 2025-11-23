@@ -1,0 +1,66 @@
+[gd_scene load_steps=2 format=3 uid="uid://bwjwomd3q7wq1"]
+
+[ext_resource type="Script" uid="uid://ws66agm855i4" path="res://demo/ClientUI.cs" id="1"]
+
+[node name="ClientUI" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -150.0
+offset_right = 200.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "LiveKit Voice Chat"
+horizontal_alignment = 1
+
+[node name="HostContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="HostLabel" type="Label" parent="VBoxContainer/HostContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Server URL:"
+
+[node name="HostInput" type="LineEdit" parent="VBoxContainer/HostContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "ws://localhost:7880"
+
+[node name="TokenContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="TokenLabel" type="Label" parent="VBoxContainer/TokenContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Access Token:"
+
+[node name="TokenInput" type="LineEdit" parent="VBoxContainer/TokenContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Enter LiveKit token"
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Ready"
+horizontal_alignment = 1
+
+[node name="ConnectButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Connect"
