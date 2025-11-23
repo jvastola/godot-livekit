@@ -160,6 +160,9 @@ let peersCount = 0;
 function joinLobby(peer, pLobby, mesh) {
 	let lobbyName = pLobby;
 	if (lobbyName === '') {
+		lobbyName = randomSecret();
+	}
+	if (!lobbies.has(lobbyName)) {
 		if (lobbies.size >= MAX_LOBBIES) {
 			throw new ProtoError(4000, STR_TOO_MANY_LOBBIES);
 		}
@@ -167,15 +170,11 @@ function joinLobby(peer, pLobby, mesh) {
 		if (peer.lobby !== '') {
 			throw new ProtoError(4000, STR_ALREADY_IN_LOBBY);
 		}
-		lobbyName = randomSecret();
 		lobbies.set(lobbyName, new Lobby(lobbyName, peer.id, mesh));
 		console.log(`Peer ${peer.id} created lobby ${lobbyName}`);
 		console.log(`Open lobbies: ${lobbies.size}`);
 	}
 	const lobby = lobbies.get(lobbyName);
-	if (!lobby) {
-		throw new ProtoError(4000, STR_LOBBY_DOES_NOT_EXISTS);
-	}
 	if (lobby.sealed) {
 		throw new ProtoError(4000, STR_LOBBY_IS_SEALED);
 	}
