@@ -1,3 +1,30 @@
-# Godot 4+ specific ignores
+# macOS
+.DS_Store
+
+# Godot auto-generated
 .godot/
-/android/
+.import/
+*.import
+
+# C# / Mono
+.mono/
+obj/
+bin/
+*.user
+*.userprefs
+*.cache
+
+# IDE
+.vscode/
+.idea/
+
+# Node modules (for token generation)
+node_modules/
+
+# Test files
+test_*.gd
+test_*.gd.uid
+
+# Build outputs
+*.dll
+*.pdb
