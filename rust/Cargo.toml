@@ -1,0 +1,21 @@
+[package]
+name = "godot-livekit"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot = "0.2.2"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+rand = "0.8"
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "0.6-h264-false-2", features = ["native-tls"] }
+futures-util = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[profile.dev]
+opt-level = 1

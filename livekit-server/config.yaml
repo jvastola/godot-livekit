@@ -1,0 +1,16 @@
+# LiveKit Server Configuration
+
+keys:
+  devkey: secret
+
+port: 7880
+
+# WebRTC configuration
+rtc:
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: false
+
+# Logging
+log_level: debug
+

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml --node-ip 127.0.0.1
+    ports:
+      - "7880:7880"      # HTTP/WebSocket
+      - "7881:7881"      # TURN/STUN
+      - "50000-50100:50000-50100/udp"  # RTC ports
+    volumes:
+      - ./config.yaml:/etc/livekit.yaml
+    environment:
+      - LIVEKIT_KEYS=devkey: secret
+    restart: unless-stopped
