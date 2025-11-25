@@ -92,25 +92,25 @@ extends Control
 var livekit_manager: Node
 
 func _ready():
-    # Create LiveKitManager
-    livekit_manager = ClassDB.instantiate("LiveKitManager")
-    add_child(livekit_manager)
-    
-    # Connect signals
-    livekit_manager.room_connected.connect(_on_room_connected)
-    livekit_manager.participant_joined.connect(_on_participant_joined)
-    
-    # Connect to room
-    livekit_manager.connect_to_room(
-        "ws://localhost:7880",
-        "your_access_token"
-    )
+	# Create LiveKitManager
+	livekit_manager = ClassDB.instantiate("LiveKitManager")
+	add_child(livekit_manager)
+	
+	# Connect signals
+	livekit_manager.room_connected.connect(_on_room_connected)
+	livekit_manager.participant_joined.connect(_on_participant_joined)
+	
+	# Connect to room
+	livekit_manager.connect_to_room(
+		"ws://localhost:7880",
+		"your_access_token"
+	)
 
 func _on_room_connected():
-    print("Connected to LiveKit room!")
+	print("Connected to LiveKit room!")
 
 func _on_participant_joined(identity: String):
-    print("Participant joined: ", identity)
+	print("Participant joined: ", identity)
 ```
 
 ### API Reference
