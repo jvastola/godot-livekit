@@ -1,45 +1,59 @@
-# IMPORTANT: Build C# Project First!
+# Building the LiveKit GDExtension
 
-The Godot editor should have just opened. Follow these steps:
+## For End Users
 
-## Step 1: Build C# Project
-1. In Godot Editor, look at the **top menu bar**
-2. Click **Build** → **Build Project**
-3. Wait for "Build succeeded" message in the Output panel
+**You don't need to build anything!** Just download and enable the addon:
 
-## Step 2: Run the Project
-1. Press **F5** (or click the Play button in top-right)
-2. UI should appear with token already filled in
-3. Click **"Connect"** button
-4. Status should change to "Connecting..." then "Connected to Room!"
+1. Download the latest release for your platform from the Releases page
+2. Extract to your Godot project's `addons/` folder
+3. Enable the plugin: **Project → Project Settings → Plugins → LiveKit GDExtension**
+4. Restart Godot
 
-## Troubleshooting
+## For Developers
 
-### If Build menu is missing:
-1. Make sure you opened `godot-livekit` project
-2. Check bottom panel for "MSBuild" tab - that indicates C# is loaded
+If you're contributing or building from source:
 
-### If "Build Failed":
-1. Check Output panel for errors
-2. Try: **Project** → **Tools** → **C#** → **Create C# solution**
-3. Then try Build again
+### Prerequisites
+1. Install Rust from https://rustup.rs/
+2. Have Godot 4.2+ installed
 
-### If token field is empty:
-The token should auto-fill to a long string starting with "eyJh..."
-If it's empty, the C# class didn't load properly - rebuild is needed.
+### Build Steps
 
-## Expected Output in Console
-When you click Connect, you should see:
+```bash
+# Navigate to rust directory
+cd rust
+
+# Build the extension (release mode)
+cargo build --release
 ```
-ClientUI initialized successfully with LiveKitManager
-LiveKit Server: ws://localhost:7880
-Room: test-room
-✅ Ready to connect!
-Connecting to ws://localhost:7880...
-WebSocket connected, waiting for JoinResponse...
-Joined Room: test-room
-```
+
+The compiled library will automatically be copied to `addons/godot-livekit/bin/` for your platform.
+
+### Verify Installation
+
+1. Open the project in Godot
+2. Go to **Project → Project Settings → Plugins**
+3. You should see "LiveKit GDExtension" - enable it
+4. Run the demo scene: **demo/ClientUI.tscn**
+
+## Quick Start
+
+1. Run a LiveKit server locally:
+   ```bash
+   docker run --rm -p 7880:7880 livekit/livekit-server --dev
+   ```
+
+2. Generate a token:
+   ```bash
+   node generate_token.js
+   ```
+
+3. In Godot, run the demo and paste the token
+
+4. Click "Connect" - you should see "Connected to Room!"
 
 ---
 
-**The key issue**: C# classes must be built THROUGH Godot's build system, not just `dotnet build`. Once you click "Build Project" in Godot, it will work!
+For detailed development instructions, see [RUST_DEVELOPMENT.md](RUST_DEVELOPMENT.md).
+
+For usage examples and API reference, see [README.md](README.md).

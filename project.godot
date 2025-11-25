@@ -10,14 +10,12 @@ config_version=5
 
 [application]
 
-config/name="WebRTC Signaling Example"
-config/description="A WebSocket signaling server/client for WebRTC.
-This demo is divided in 4 parts.
-The protocol is text based, and composed by a command and possibly
-multiple payload arguments, each separated by a new line."
-config/tags=PackedStringArray("demo", "network", "official")
-run/main_scene="res://demo/ClientUI.tscn"
-config/features=PackedStringArray("4.4", "C#")
+config/name="Godot LiveKit Demo"
+config/description="LiveKit voice chat demo using Rust GDExtension.
+Real-time audio streaming with multiple participants."
+config/tags=PackedStringArray("demo", "network", "livekit", "voice-chat")
+run/main_scene="res://demo/GDExtensionTest.tscn"
+config/features=PackedStringArray("4.4")
 
 [audio]
 
@@ -34,9 +32,9 @@ gdscript/warnings/unused_argument=false
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
-[dotnet]
+[editor_plugins]
 
-project/assembly_name="WebRTC Signaling Example"
+enabled=PackedStringArray("res://addons/godot-livekit/plugin.cfg")
 
 [rendering]
 

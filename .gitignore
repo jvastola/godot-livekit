@@ -37,3 +37,14 @@ test_*.gd.uid
 # Android
 android/
 
+# Rust build artifacts
+rust/target/
+rust/Cargo.lock
+
+# Compiled GDExtension libraries (generated during build)
+addons/godot-livekit/bin/
+
+# Rust backup files
+**/*.rs.bk
+
+
