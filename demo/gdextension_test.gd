@@ -20,7 +20,7 @@ var input_device_option: OptionButton
 var mic_threshold: float = 0.1
 var is_muted: bool = false
 var hear_own_audio: bool = false
-const BUFFER_SIZE = 512 # Match mic_visualizer.gd for stability
+const BUFFER_SIZE = 4096 # Increased to capture all frames (16ms @ 48kHz is ~800 frames)
 var audio_bus_name = "LiveKit Mic"
 var audio_bus_idx = -1
 
@@ -51,6 +51,11 @@ func _ready():
 		livekit_manager.participant_left.connect(_on_participant_left)
 		livekit_manager.on_audio_frame.connect(_on_audio_frame)
 		livekit_manager.error_occurred.connect(_on_error)
+		
+		# Set sample rate
+		var mix_rate = AudioServer.get_mix_rate()
+		livekit_manager.set_mic_sample_rate(int(mix_rate))
+		print("🎤 Set LiveKit mic sample rate to: ", mix_rate)
 	else:
 		print("❌ LiveKitManager class not found! Is the GDExtension loaded?")
 		status_label.text = "❌ Error: GDExtension not loaded"
@@ -108,6 +113,7 @@ func _setup_audio():
 	var input_devices = AudioServer.get_input_device_list()
 	print("🎤 Available Input Devices: ", input_devices)
 	print("🎤 Current Input Device: ", AudioServer.get_input_device())
+	print("🎤 Audio Mix Rate: ", AudioServer.get_mix_rate())
 	
 	# Start microphone input
 	mic_player = AudioStreamPlayer.new()

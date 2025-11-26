@@ -33,6 +33,7 @@ pub struct LiveKitManager {
     event_receiver: Option<mpsc::UnboundedReceiver<InternalEvent>>,
     audio_sender: Option<mpsc::UnboundedSender<Vec<f32>>>,
     is_connected: Arc<Mutex<bool>>,
+    mic_sample_rate: i32,
 }
 
 #[godot_api]
@@ -44,6 +45,7 @@ impl INode for LiveKitManager {
             event_receiver: None,
             audio_sender: None,
             is_connected: Arc::new(Mutex::new(false)),
+            mic_sample_rate: 48000, // Default
         }
     }
 
@@ -116,6 +118,12 @@ impl LiveKitManager {
     fn on_audio_frame(peer_id: GString, frame: PackedVector2Array);
 
     #[func]
+    pub fn set_mic_sample_rate(&mut self, rate: i32) {
+        self.mic_sample_rate = rate;
+        godot_print!("LiveKit: Mic sample rate set to {}", rate);
+    }
+
+    #[func]
     pub fn is_room_connected(&self) -> bool {
         *self.is_connected.lock().unwrap()
     }
@@ -132,6 +140,7 @@ impl LiveKitManager {
         self.audio_sender = Some(audio_tx);
         
         let is_connected = self.is_connected.clone();
+        let mic_sample_rate = self.mic_sample_rate;
 
         if let Some(runtime) = &self.runtime {
             runtime.spawn(async move {
@@ -162,7 +171,7 @@ impl LiveKitManager {
                         noise_suppression: true,
                         auto_gain_control: true,
                     },
-                    48000,
+                    mic_sample_rate as u32,
                     1, // Mono
                     None, // disable_processing
                 );
@@ -207,7 +216,7 @@ impl LiveKitManager {
                         
                         let frame = AudioFrame {
                             data: std::borrow::Cow::Borrowed(&i16_samples),
-                            sample_rate: 48000,
+                            sample_rate: mic_sample_rate as u32,
                             num_channels: 1,
                             samples_per_channel: i16_samples.len() as u32,
                         };
