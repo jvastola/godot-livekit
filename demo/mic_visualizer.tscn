@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://c74t1agk75rjv"]
+[gd_scene load_steps=2 format=3 uid="uid://bidi4clifx8x4"]
 
-[ext_resource type="Script" uid="uid://bgv58lumy0b37" path="res://demo/mic_visualizer.gd" id="1"]
+[ext_resource type="Script" uid="uid://c332136vb5m5m" path="res://demo/mic_visualizer.gd" id="1"]
 
 [node name="MicVisualizer" type="Control"]
 layout_mode = 3

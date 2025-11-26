@@ -97,11 +97,10 @@ func _setup_audio():
 	# Route to Master
 	AudioServer.set_bus_send(audio_bus_idx, "Master")
 	
-	# Mute by default (so we don't hear ourselves unless toggled)
-	AudioServer.set_bus_mute(audio_bus_idx, true)
-	
-	# Ensure volume is 0dB (full volume)
-	AudioServer.set_bus_volume_db(audio_bus_idx, 0.0)
+	# List available input devices
+	var input_devices = AudioServer.get_input_device_list()
+	print("🎤 Available Input Devices: ", input_devices)
+	print("🎤 Current Input Device: ", AudioServer.get_input_device())
 	
 	# Start microphone input
 	mic_player = AudioStreamPlayer.new()
@@ -109,11 +108,14 @@ func _setup_audio():
 	mic_player.stream = AudioStreamMicrophone.new()
 	mic_player.autoplay = true
 	add_child(mic_player)
-	mic_player.play()
+	mic_player.play() # Ensure it's playing
 	
 	print("🎤 Audio capture initialized on '%s' bus (idx: %d)" % [audio_bus_name, audio_bus_idx])
 	print("   - Send to: Master")
-	print("   - Muted: ", AudioServer.is_bus_mute(audio_bus_idx))
+	# Use volume for "mute" to avoid disabling capture if that's the issue
+	AudioServer.set_bus_mute(audio_bus_idx, false)
+	AudioServer.set_bus_volume_db(audio_bus_idx, -80.0) # Effectively muted
+	print("   - Muted (via volume): ", AudioServer.get_bus_volume_db(audio_bus_idx) < -60)
 	print("   - Volume: ", AudioServer.get_bus_volume_db(audio_bus_idx))
 
 var _debug_timer = 0.0
@@ -271,9 +273,10 @@ func _on_threshold_changed(value: float):
 func _on_hear_audio_toggled(button_pressed: bool):
 	hear_own_audio = button_pressed
 	if audio_bus_idx != -1:
-		# Mute the bus if we DON'T want to hear it
-		AudioServer.set_bus_mute(audio_bus_idx, not hear_own_audio)
-		print("🔊 Hear own audio: ", hear_own_audio, " (Bus Muted: ", not hear_own_audio, ")")
+		# "Mute" by lowering volume, "Unmute" by raising it
+		var volume_db = 0.0 if hear_own_audio else -80.0
+		AudioServer.set_bus_volume_db(audio_bus_idx, volume_db)
+		print("🔊 Hear own audio: ", hear_own_audio, " (Volume: ", volume_db, "dB)")
 
 
 func _add_participant(name: String, _level: float):
