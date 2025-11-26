@@ -195,7 +195,7 @@ impl LiveKitManager {
                     },
                     mic_sample_rate as u32,
                     1, // Mono
-                    None, // disable_processing
+                    0, // disable_processing (0 = false in new API)
                 );
                 
                 let track = livekit::track::LocalAudioTrack::create_audio_track(

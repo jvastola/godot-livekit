@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 godot = "0.2.2"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 rand = "0.8"
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "0.6-h264-false-2", features = ["native-tls"] }
+livekit = { version = "0.7.1", features = ["native-tls"] }
 futures-util = "0.3"
 
 [profile.release]

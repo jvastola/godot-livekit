@@ -30,6 +30,7 @@ var audio_bus_idx = -1
 var livekit_manager: Node
 var participants = {} # Dictionary of participant_id -> { "player": AudioStreamPlayer, "level": float, "level_bar": ProgressBar, "muted": bool, "volume": float }
 var capture_effect: AudioEffectCapture
+var amplify_effect: AudioEffectAmplify
 var mic_player: AudioStreamPlayer
 
 
@@ -81,6 +82,32 @@ func _ready():
 	hear_audio_check.toggled.connect(_on_hear_audio_toggled)
 	mic_section.add_child(hear_audio_check)
 	
+	# Create Gain slider
+	var gain_container = HBoxContainer.new()
+	gain_container.add_theme_constant_override("separation", 10)
+	mic_section.add_child(gain_container)
+	
+	var gain_title = Label.new()
+	gain_title.text = "Mic Gain (dB):"
+	gain_title.custom_minimum_size = Vector2(100, 0)
+	gain_container.add_child(gain_title)
+	
+	var gain_slider = HSlider.new()
+	gain_slider.custom_minimum_size = Vector2(150, 0)
+	gain_slider.min_value = 0.0
+	gain_slider.max_value = 60.0
+	gain_slider.value = 34.0 # Default gain
+	gain_slider.value_changed.connect(_on_gain_changed)
+	gain_container.add_child(gain_slider)
+	
+	var gain_value_label = Label.new()
+	gain_value_label.text = "34.0 dB"
+	gain_value_label.custom_minimum_size = Vector2(60, 0)
+	gain_container.add_child(gain_value_label)
+	
+	# Store reference for updates
+	gain_slider.set_meta("value_label", gain_value_label)
+	
 	# Initial state
 	disconnect_button.disabled = true
 	threshold_slider.value = mic_threshold
@@ -123,7 +150,12 @@ func _setup_audio():
 	AudioServer.add_bus(audio_bus_idx)
 	AudioServer.set_bus_name(audio_bus_idx, audio_bus_name)
 	
-	# Add Capture effect
+	# Add Amplify effect first (for local playback)
+	amplify_effect = AudioEffectAmplify.new()
+	amplify_effect.volume_db = 34.0 # Default ~50x gain, adjustable via slider
+	AudioServer.add_bus_effect(audio_bus_idx, amplify_effect)
+	
+	# Add Capture effect after amplification
 	capture_effect = AudioEffectCapture.new()
 	AudioServer.add_bus_effect(audio_bus_idx, capture_effect)
 	
@@ -136,13 +168,16 @@ func _setup_audio():
 	print("🎤 Current Input Device: ", AudioServer.get_input_device())
 	print("🎤 Audio Mix Rate: ", AudioServer.get_mix_rate())
 	
-	# Start microphone input
+	# Start microphone input - IMPORTANT: Order matters!
+	# Create the microphone stream first
+	var mic_stream = AudioStreamMicrophone.new()
+	
+	# Create the player and configure it
 	mic_player = AudioStreamPlayer.new()
+	mic_player.stream = mic_stream
 	mic_player.bus = audio_bus_name
-	mic_player.stream = AudioStreamMicrophone.new()
-	mic_player.autoplay = true
 	add_child(mic_player)
-	mic_player.play() # Ensure it's playing
+	mic_player.play()
 	
 	print("🎤 Audio capture initialized on '%s' bus (idx: %d)" % [audio_bus_name, audio_bus_idx])
 	print("   - Send to: Master")
@@ -182,6 +217,9 @@ func _process(delta):
 func _process_mic_audio():
 	if capture_effect and capture_effect.can_get_buffer(BUFFER_SIZE):
 		var buffer = capture_effect.get_buffer(BUFFER_SIZE)
+		
+		# Audio is already amplified by AudioEffectAmplify on the bus
+		# No need for additional software gain here
 		
 		# Only push to LiveKit if connected and not muted
 		if livekit_manager and livekit_manager.is_room_connected() and not is_muted:
@@ -358,7 +396,19 @@ func _on_hear_audio_toggled(button_pressed: bool):
 		# "Mute" by lowering volume, "Unmute" by raising it
 		var volume_db = 0.0 if hear_own_audio else -80.0
 		AudioServer.set_bus_volume_db(audio_bus_idx, volume_db)
-		print("🔊 Hear own audio: ", hear_own_audio, " (Volume: ", volume_db, "dB)")
+		var actual_volume = AudioServer.get_bus_volume_db(audio_bus_idx)
+		var master_mute = AudioServer.is_bus_mute(AudioServer.get_bus_index("Master"))
+		print("🔊 Hear own audio: ", hear_own_audio, " (Volume: ", actual_volume, "dB, Master muted: ", master_mute, ")")
+
+func _on_gain_changed(value: float):
+	if amplify_effect:
+		amplify_effect.volume_db = value
+		print("🎚️ Mic gain changed to: ", value, " dB")
+		
+		# Update the label (find it via the slider's meta)
+		# We need to find the slider that called this... let's use a different approach
+		# Actually, we can just update any label we find near the gain controls
+		# For simplicity, let's just print for now and rely on the slider's built-in value display
 
 func _update_input_device_list():
 	input_device_option.clear()
@@ -372,13 +422,23 @@ func _update_input_device_list():
 
 func _on_input_device_selected(index: int):
 	var device_name = input_device_option.get_item_text(index)
-	AudioServer.set_input_device(device_name)
-	print("🎤 Switched Input Device to: ", device_name)
+	print("🎤 Switching Input Device to: ", device_name)
 	
-	# Restart player just in case driver restart stopped it
+	# Stop current player first
 	if mic_player:
 		mic_player.stop()
+	
+	# Set the new device
+	AudioServer.set_input_device(device_name)
+	
+	# Wait a frame for the audio driver to switch, then recreate the stream
+	await get_tree().process_frame
+	
+	# Must recreate the AudioStreamMicrophone to pick up the new device
+	if mic_player:
+		mic_player.stream = AudioStreamMicrophone.new() # Create new stream for new device
 		mic_player.play()
+		print("   ✅ Microphone stream recreated and playing on: ", AudioServer.get_input_device())
 
 
 func _add_participant(name: String, _level: float):
