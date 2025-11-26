@@ -28,7 +28,7 @@ var audio_bus_idx = -1
 @onready var participant_list = $Panel/VBoxContainer/ParticipantList
 
 var livekit_manager: Node
-var participants = {} # Dictionary of participant_id -> { "player": AudioStreamPlayer, "level": float, "level_bar": ProgressBar, "muted": bool }
+var participants = {} # Dictionary of participant_id -> { "player": AudioStreamPlayer, "level": float, "level_bar": ProgressBar, "muted": bool, "volume": float }
 var capture_effect: AudioEffectCapture
 var mic_player: AudioStreamPlayer
 
@@ -94,6 +94,27 @@ func _ready():
 	
 	status_label.text = "Ready to connect"
 	print("✅ LiveKit Audio UI Ready!")
+	
+	# Fix UI Overflow: Wrap ParticipantList in a ScrollContainer
+	_setup_scroll_container()
+
+func _setup_scroll_container():
+	var parent = participant_list.get_parent()
+	if parent:
+		var scroll = ScrollContainer.new()
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.custom_minimum_size.y = 200 # Ensure some height
+		
+		# We need to move participant_list inside scroll
+		# But we can't easily move it if it's an onready node that might be referenced elsewhere by path
+		# Instead, let's just reparent it.
+		parent.remove_child(participant_list)
+		parent.add_child(scroll)
+		scroll.add_child(participant_list)
+		
+		# Ensure list expands
+		participant_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		participant_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 func _setup_audio():
 	# Always create a new bus to ensure clean state, matching mic_visualizer.gd
@@ -267,7 +288,16 @@ func _on_audio_frame(peer_id: String, frame: PackedVector2Array):
 	if player and not p_data["muted"]:
 		var playback = player.get_stream_playback()
 		if playback:
-			playback.push_buffer(frame)
+			# Apply volume scaling
+			var vol = p_data.get("volume", 1.0)
+			if vol != 1.0:
+				var scaled_frame = PackedVector2Array()
+				scaled_frame.resize(frame.size())
+				for i in range(frame.size()):
+					scaled_frame[i] = frame[i] * vol
+				playback.push_buffer(scaled_frame)
+			else:
+				playback.push_buffer(frame)
 
 func _create_participant_audio(peer_id: String):
 	# Only create if we don't already have a player for this participant
@@ -344,7 +374,8 @@ func _add_participant(name: String, _level: float):
 			"player": null,
 			"level": 0.0,
 			"level_bar": null,
-			"muted": false
+			"muted": false,
+			"volume": 1.0
 		}
 		print("   Added participant to list: ", name)
 
@@ -385,10 +416,25 @@ func _update_participant_list():
 		level_bar.show_percentage = false
 		hbox.add_child(level_bar)
 		
+		# Volume Slider
+		var vol_slider = HSlider.new()
+		vol_slider.custom_minimum_size = Vector2(100, 0)
+		vol_slider.min_value = 0.0
+		vol_slider.max_value = 2.0
+		vol_slider.step = 0.1
+		vol_slider.value = p_data["volume"]
+		vol_slider.value_changed.connect(_on_participant_volume_changed.bind(participant_id))
+		hbox.add_child(vol_slider)
+		
 		# Store ref to bar
 		p_data["level_bar"] = level_bar
 		
 		participant_list.add_child(hbox)
+
+func _on_participant_volume_changed(value: float, participant_id: String):
+	if participants.has(participant_id):
+		participants[participant_id]["volume"] = value
+		print("Volume for ", participant_id, " set to ", value)
 
 func _on_participant_mute_toggled(participant_id: String, btn: Button):
 	if participants.has(participant_id):
