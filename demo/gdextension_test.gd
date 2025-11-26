@@ -103,12 +103,12 @@ func _ready():
 	gain_slider.custom_minimum_size = Vector2(150, 0)
 	gain_slider.min_value = 0.0
 	gain_slider.max_value = 60.0
-	gain_slider.value = 34.0 # Default gain
+	gain_slider.value = 0.0 # Default gain
 	gain_slider.value_changed.connect(_on_gain_changed)
 	gain_container.add_child(gain_slider)
 	
 	var gain_value_label = Label.new()
-	gain_value_label.text = "34.0 dB"
+	gain_value_label.text = "0.0 dB"
 	gain_value_label.custom_minimum_size = Vector2(60, 0)
 	gain_container.add_child(gain_value_label)
 	
@@ -208,7 +208,7 @@ func _setup_audio():
 	
 	# Add Amplify effect first (for local playback)
 	amplify_effect = AudioEffectAmplify.new()
-	amplify_effect.volume_db = 34.0 # Default ~50x gain, adjustable via slider
+	amplify_effect.volume_db = 0.0 # Default ~50x gain, adjustable via slider
 	AudioServer.add_bus_effect(audio_bus_idx, amplify_effect)
 	
 	# Add Capture effect after amplification
