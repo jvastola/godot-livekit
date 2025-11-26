@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://b0v8qxg5nhju7"]
 
-[ext_resource type="Script" uid="uid://clfbuo7tqknxi" path="res://demo/gdextension_test.gd" id="1_w4x8r"]
+[ext_resource type="Script" uid="uid://cf37jgs1ottia" path="res://demo/gdextension_test.gd" id="1_w4x8r"]
 
 [node name="LiveKitAudioUI" type="Control"]
 layout_mode = 3

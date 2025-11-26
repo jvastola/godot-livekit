@@ -9,10 +9,19 @@ extends Control
 @onready var status_label = $Panel/VBoxContainer/StatusLabel
 
 # Audio controls
+@onready var mic_section = $Panel/VBoxContainer/MicSection
 @onready var mic_level_bar = $Panel/VBoxContainer/MicSection/MicLevelBar
 @onready var threshold_slider = $Panel/VBoxContainer/MicSection/ThresholdSlider
 @onready var threshold_label = $Panel/VBoxContainer/MicSection/ThresholdLabel
 @onready var mute_button = $Panel/VBoxContainer/MicSection/MuteButton
+
+var hear_audio_check: CheckBox
+var mic_threshold: float = 0.1
+var is_muted: bool = false
+var hear_own_audio: bool = false
+const BUFFER_SIZE = 512 # Match mic_visualizer.gd for stability
+var audio_bus_name = "LiveKit Mic"
+var audio_bus_idx = -1
 
 # Participants
 @onready var participant_list = $Panel/VBoxContainer/ParticipantList
@@ -53,10 +62,17 @@ func _ready():
 	mute_button.pressed.connect(_on_mute_toggle)
 	threshold_slider.value_changed.connect(_on_threshold_changed)
 	
+	# Create Hear Own Audio checkbox
+	hear_audio_check = CheckBox.new()
+	hear_audio_check.text = "Hear Own Audio"
+	hear_audio_check.button_pressed = hear_own_audio
+	hear_audio_check.toggled.connect(_on_hear_audio_toggled)
+	mic_section.add_child(hear_audio_check)
+	
 	# Initial state
 	disconnect_button.disabled = true
-	threshold_slider.value = 0.1
-	_on_threshold_changed(0.1)
+	threshold_slider.value = mic_threshold
+	_on_threshold_changed(mic_threshold)
 	
 	# Set local server values for easy testing
 	# For CLIENT 1 - use client-1 token
@@ -68,46 +84,83 @@ func _ready():
 	print("✅ LiveKit Audio UI Ready!")
 
 func _setup_audio():
-	# Create Record bus if not exists
-	var bus_idx = AudioServer.get_bus_index("Record")
-	if bus_idx == -1:
-		bus_idx = AudioServer.get_bus_count()
-		AudioServer.add_bus(bus_idx)
-		AudioServer.set_bus_name(bus_idx, "Record")
+	# Always create a new bus to ensure clean state, matching mic_visualizer.gd
+	# This avoids potential issues with reusing buses in unknown states
+	audio_bus_idx = AudioServer.bus_count
+	AudioServer.add_bus(audio_bus_idx)
+	AudioServer.set_bus_name(audio_bus_idx, audio_bus_name)
 	
 	# Add Capture effect
 	capture_effect = AudioEffectCapture.new()
-	AudioServer.add_bus_effect(bus_idx, capture_effect)
+	AudioServer.add_bus_effect(audio_bus_idx, capture_effect)
 	
-	# Mute the bus to prevent feedback loop
-	AudioServer.set_bus_mute(bus_idx, true)
+	# Route to Master
+	AudioServer.set_bus_send(audio_bus_idx, "Master")
+	
+	# Mute by default (so we don't hear ourselves unless toggled)
+	AudioServer.set_bus_mute(audio_bus_idx, true)
+	
+	# Ensure volume is 0dB (full volume)
+	AudioServer.set_bus_volume_db(audio_bus_idx, 0.0)
 	
 	# Start microphone input
 	mic_player = AudioStreamPlayer.new()
-	mic_player.bus = "Record"
+	mic_player.bus = audio_bus_name
 	mic_player.stream = AudioStreamMicrophone.new()
 	mic_player.autoplay = true
 	add_child(mic_player)
 	mic_player.play()
 	
-	print("🎤 Audio capture initialized on 'Record' bus")
+	print("🎤 Audio capture initialized on '%s' bus (idx: %d)" % [audio_bus_name, audio_bus_idx])
+	print("   - Send to: Master")
+	print("   - Muted: ", AudioServer.is_bus_mute(audio_bus_idx))
+	print("   - Volume: ", AudioServer.get_bus_volume_db(audio_bus_idx))
 
-func _process(_delta):
-	if livekit_manager and livekit_manager.is_room_connected():
-		_process_mic_audio()
+var _debug_timer = 0.0
+func _process(delta):
+	# Always process mic audio for visualization and local feedback
+	_process_mic_audio()
+	
+	# Debug audio state every 2 seconds
+	_debug_timer += delta
+	if _debug_timer > 2.0:
+		_debug_timer = 0.0
+		if audio_bus_idx != -1:
+			var is_bus_muted = AudioServer.is_bus_mute(audio_bus_idx)
+			var is_player_playing = mic_player.playing
+			print("🔊 [Debug] Bus Muted: %s | Player Playing: %s | Hear Own: %s" % [is_bus_muted, is_player_playing, hear_own_audio])
+			
+			# Force play if stopped
+			if not is_player_playing:
+				print("⚠️ Player stopped! Restarting...")
+				mic_player.play()
 
 func _process_mic_audio():
-	if capture_effect and capture_effect.can_get_buffer(1):
-		var frames_available = capture_effect.get_frames_available()
-		if frames_available > 0:
-			var buffer = capture_effect.get_buffer(frames_available)
+	if capture_effect and capture_effect.can_get_buffer(BUFFER_SIZE):
+		var buffer = capture_effect.get_buffer(BUFFER_SIZE)
+		
+		# Only push to LiveKit if connected and not muted
+		if livekit_manager and livekit_manager.is_room_connected() and not is_muted:
 			livekit_manager.push_mic_audio(buffer)
-			
-			# Visualize level
-			var max_amp = 0.0
-			for frame in buffer:
-				max_amp = max(max_amp, abs(frame.x), abs(frame.y))
-			mic_level_bar.value = max_amp * 100
+		
+		# Visualize level
+		var max_amp = 0.0
+		for frame in buffer:
+			var amp = max(abs(frame.x), abs(frame.y))
+			max_amp = max(max_amp, amp)
+		
+		# Debug buffer content (throttled)
+		if _debug_timer > 1.9: # Print just before the other debug print
+			print("📊 [Debug] Max Amp: ", max_amp, " | Buffer Size: ", buffer.size())
+		
+		# Update mic level bar
+		mic_level_bar.value = max_amp * 100
+		
+		# Visual feedback for threshold
+		if max_amp > mic_threshold and not is_muted:
+			mic_level_bar.modulate = Color.GREEN
+		else:
+			mic_level_bar.modulate = Color.WHITE
 
 
 func _on_connect_pressed():
@@ -203,15 +256,24 @@ func _on_error(msg: String):
 
 
 func _on_mute_toggle():
-	# livekit_manager.set_mic_muted(muted) # Not implemented in new Rust code yet
-	# We can mute the mic_player
-	mic_player.stream_paused = !mic_player.stream_paused
-	var muted = mic_player.stream_paused
-	mute_button.text = "🔇 Muted" if muted else "🎤 Mic Active"
+	is_muted = !is_muted
+	mute_button.text = "🔇 Muted" if is_muted else "🎤 Mic Active"
+	
+	# We don't stop the player so we can still see visualization if we wanted,
+	# but for now let's just stop pushing audio in _process_mic_audio.
+	# Also update visualizer color
+	mic_level_bar.modulate = Color.GRAY if is_muted else Color.WHITE
 
 func _on_threshold_changed(value: float):
-	# livekit_manager.set_mic_threshold(value) # Not implemented
-	pass
+	mic_threshold = value
+	threshold_label.text = "%.2f" % mic_threshold
+
+func _on_hear_audio_toggled(button_pressed: bool):
+	hear_own_audio = button_pressed
+	if audio_bus_idx != -1:
+		# Mute the bus if we DON'T want to hear it
+		AudioServer.set_bus_mute(audio_bus_idx, not hear_own_audio)
+		print("🔊 Hear own audio: ", hear_own_audio, " (Bus Muted: ", not hear_own_audio, ")")
 
 
 func _add_participant(name: String, _level: float):

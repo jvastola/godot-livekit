@@ -3,33 +3,117 @@ extends Control
 # This script visualizes microphone input as a waveform.
 # It does not depend on any other project code.
 
-var audio_bus_index : int = -1
-var effect_capture : AudioEffectCapture = null
+var audio_bus_index: int = -1
+var effect_capture: AudioEffectCapture = null
 var audio_buffer = []
 var frequency_bands = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 const BUFFER_SIZE = 512
-const MIC_THRESHOLD = 0.05  # Activation threshold for mic
+var mic_threshold = 0.05 # Activation threshold for mic (now adjustable)
 var is_mic_active = false
+var is_muted = false
+var hear_own_audio = false
 var peak_level = 0.0
+var audio_player: AudioStreamPlayer = null
+
+# UI Controls
+var mute_button: Button
+var threshold_slider: HSlider
+var threshold_label: Label
+var hear_audio_check: CheckBox
+var mic_level_bar: ProgressBar
 
 
 func _ready():
-	# Get the master bus
-	audio_bus_index = 0
+	# Create a dedicated bus for microphone capture
+	# This ensures visualization works even when the user doesn't want to hear their own audio
+	var mic_bus_index = AudioServer.bus_count
+	AudioServer.add_bus(mic_bus_index)
+	AudioServer.set_bus_name(mic_bus_index, "Mic Capture")
 	
-	# Create and add the capture effect to master bus
+	# Add capture effect to the mic capture bus
 	effect_capture = AudioEffectCapture.new()
-	AudioServer.add_bus_effect(audio_bus_index, effect_capture)
+	AudioServer.add_bus_effect(mic_bus_index, effect_capture)
+	
+	# By default, don't send the mic bus to master (no self-monitoring)
+	AudioServer.set_bus_send(mic_bus_index, "Master")
+	AudioServer.set_bus_mute(mic_bus_index, true)
+	
+	audio_bus_index = mic_bus_index
 	
 	# Create microphone stream and player
 	var mic_stream = AudioStreamMicrophone.new()
-	var player = AudioStreamPlayer.new()
-	player.stream = mic_stream
-	player.bus = AudioServer.get_bus_name(audio_bus_index)  # Route to master bus where we capture
-	add_child(player)
-	player.play()
-
+	audio_player = AudioStreamPlayer.new()
+	audio_player.stream = mic_stream
+	audio_player.bus = "Mic Capture"
+	add_child(audio_player)
+	audio_player.play()
+	
+	# Create UI controls
+	_create_ui_controls()
+	
 	set_process(true)
+
+
+func _create_ui_controls():
+	# Create a VBoxContainer for the controls
+	var controls_container = VBoxContainer.new()
+	controls_container.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	controls_container.position = Vector2(10, 50)
+	controls_container.add_theme_constant_override("separation", 10)
+	add_child(controls_container)
+	
+	# Mute button
+	mute_button = Button.new()
+	mute_button.text = "Mute: OFF"
+	mute_button.custom_minimum_size = Vector2(150, 30)
+	mute_button.pressed.connect(_on_mute_toggled)
+	controls_container.add_child(mute_button)
+	
+	# Threshold control
+	var threshold_container = HBoxContainer.new()
+	threshold_container.add_theme_constant_override("separation", 10)
+	controls_container.add_child(threshold_container)
+	
+	var threshold_title = Label.new()
+	threshold_title.text = "Threshold:"
+	threshold_title.custom_minimum_size = Vector2(80, 0)
+	threshold_container.add_child(threshold_title)
+	
+	threshold_slider = HSlider.new()
+	threshold_slider.min_value = 0.01
+	threshold_slider.max_value = 0.5
+	threshold_slider.step = 0.01
+	threshold_slider.value = mic_threshold
+	threshold_slider.custom_minimum_size = Vector2(150, 20)
+	threshold_slider.value_changed.connect(_on_threshold_changed)
+	threshold_container.add_child(threshold_slider)
+	
+	threshold_label = Label.new()
+	threshold_label.text = "%.2f" % mic_threshold
+	threshold_label.custom_minimum_size = Vector2(40, 0)
+	threshold_container.add_child(threshold_label)
+	
+	# Mic level bar
+	var mic_level_container = VBoxContainer.new()
+	mic_level_container.add_theme_constant_override("separation", 5)
+	controls_container.add_child(mic_level_container)
+	
+	var mic_level_title = Label.new()
+	mic_level_title.text = "Mic Level:"
+	mic_level_container.add_child(mic_level_title)
+	
+	mic_level_bar = ProgressBar.new()
+	mic_level_bar.custom_minimum_size = Vector2(250, 25)
+	mic_level_bar.max_value = 100
+	mic_level_bar.show_percentage = false
+	mic_level_container.add_child(mic_level_bar)
+	
+	# Hear own audio checkbox
+	hear_audio_check = CheckBox.new()
+	hear_audio_check.text = "Hear Own Audio"
+	hear_audio_check.button_pressed = hear_own_audio
+	hear_audio_check.toggled.connect(_on_hear_audio_toggled)
+	controls_container.add_child(hear_audio_check)
 
 
 func _process(_delta):
@@ -51,9 +135,37 @@ func _process(_delta):
 			
 			# Update frequency bands for bar visualization
 			_update_frequency_bands()
-			is_mic_active = peak_level > MIC_THRESHOLD
+			is_mic_active = peak_level > mic_threshold
+			
+			# Update mic level bar (0-100%)
+			if mic_level_bar:
+				mic_level_bar.value = peak_level * 100
 	
 	queue_redraw()
+
+
+func _on_mute_toggled():
+	is_muted = !is_muted
+	mute_button.text = "Mute: ON" if is_muted else "Mute: OFF"
+	
+	# When muted, stop the audio player playback
+	if audio_player:
+		if is_muted:
+			audio_player.stop()
+		else:
+			audio_player.play()
+
+
+func _on_threshold_changed(value: float):
+	mic_threshold = value
+	threshold_label.text = "%.2f" % mic_threshold
+
+
+func _on_hear_audio_toggled(button_pressed: bool):
+	hear_own_audio = button_pressed
+	# Mute the mic capture bus when not wanting to hear own audio
+	# This keeps visualization working but prevents audio output
+	AudioServer.set_bus_mute(audio_bus_index, not hear_own_audio)
 
 
 func _update_frequency_bands():
@@ -89,15 +201,20 @@ func _draw():
 	# Draw center line
 	draw_line(Vector2(0, h / 2), Vector2(w, h / 2), Color(0.3, 0.3, 0.3, 0.5), 1.0)
 	
+	# Draw mute status indicator (top right)
+	if is_muted:
+		draw_rect(Rect2(w - 120, 10, 20, 20), Color(1, 0, 0, 1))
+		_draw_text_with_outline(Vector2(w - 95, 15), "MUTED", Color(1, 0, 0))
+	
 	# Draw mic activation indicator
-	if is_mic_active:
+	if is_mic_active and not is_muted:
 		draw_rect(Rect2(10, 10, 20, 20), Color(0, 1, 0, 1))
 		_draw_text_with_outline(Vector2(35, 15), "MIC ACTIVE", Color(0, 1, 0))
 	else:
 		draw_rect(Rect2(10, 10, 20, 20), Color(0.5, 0.5, 0.5, 0.5))
 		_draw_text_with_outline(Vector2(35, 15), "MIC IDLE", Color(0.5, 0.5, 0.5))
 	
-	# Draw waveform
+	# Draw waveform (dimmed when muted)
 	_draw_waveform(w, h)
 	
 	# Draw frequency bars
@@ -111,7 +228,7 @@ func _draw_waveform(w: float, h: float):
 	if audio_buffer.size() < 2:
 		return
 	
-	var mid = h / 2.5  # Adjust midpoint
+	var mid = h / 2.5 # Adjust midpoint
 	var step = w / float(audio_buffer.size())
 	var points = PackedVector2Array()
 	
@@ -133,7 +250,7 @@ func _draw_frequency_bars(w: float, h: float):
 	var bar_start_y = h * 0.7
 	
 	for i in range(frequency_bands.size()):
-		var bar_height = frequency_bands[i] * (h * 0.25) * 10.0  # Scale up for visibility
+		var bar_height = frequency_bands[i] * (h * 0.25) * 10.0 # Scale up for visibility
 		var x = i * bar_width + bar_spacing
 		var y = bar_start_y
 		
