@@ -16,6 +16,7 @@ extends Control
 @onready var mute_button = $Panel/VBoxContainer/MicSection/MuteButton
 
 var hear_audio_check: CheckBox
+var input_device_option: OptionButton
 var mic_threshold: float = 0.1
 var is_muted: bool = false
 var hear_own_audio: bool = false
@@ -62,6 +63,12 @@ func _ready():
 	mute_button.pressed.connect(_on_mute_toggle)
 	threshold_slider.value_changed.connect(_on_threshold_changed)
 	
+	# Create Input Device Selector
+	input_device_option = OptionButton.new()
+	input_device_option.item_selected.connect(_on_input_device_selected)
+	mic_section.add_child(input_device_option)
+	_update_input_device_list()
+
 	# Create Hear Own Audio checkbox
 	hear_audio_check = CheckBox.new()
 	hear_audio_check.text = "Hear Own Audio"
@@ -277,6 +284,26 @@ func _on_hear_audio_toggled(button_pressed: bool):
 		var volume_db = 0.0 if hear_own_audio else -80.0
 		AudioServer.set_bus_volume_db(audio_bus_idx, volume_db)
 		print("🔊 Hear own audio: ", hear_own_audio, " (Volume: ", volume_db, "dB)")
+
+func _update_input_device_list():
+	input_device_option.clear()
+	var devices = AudioServer.get_input_device_list()
+	var current_device = AudioServer.get_input_device()
+	for i in range(devices.size()):
+		var device_name = devices[i]
+		input_device_option.add_item(device_name)
+		if device_name == current_device:
+			input_device_option.selected = i
+
+func _on_input_device_selected(index: int):
+	var device_name = input_device_option.get_item_text(index)
+	AudioServer.set_input_device(device_name)
+	print("🎤 Switched Input Device to: ", device_name)
+	
+	# Restart player just in case driver restart stopped it
+	if mic_player:
+		mic_player.stop()
+		mic_player.play()
 
 
 func _add_participant(name: String, _level: float):
