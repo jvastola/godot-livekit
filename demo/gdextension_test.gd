@@ -28,7 +28,7 @@ var audio_bus_idx = -1
 @onready var participant_list = $Panel/VBoxContainer/ParticipantList
 
 var livekit_manager: Node
-var participants = {} # Dictionary of participant_id -> AudioStreamPlayer
+var participants = {} # Dictionary of participant_id -> { "player": AudioStreamPlayer, "level": float, "level_bar": ProgressBar, "muted": bool }
 var capture_effect: AudioEffectCapture
 var mic_player: AudioStreamPlayer
 
@@ -150,6 +150,14 @@ func _process(delta):
 				print("⚠️ Player stopped! Restarting...")
 				mic_player.play()
 
+	# Update participant levels
+	for p_id in participants:
+		var p_data = participants[p_id]
+		if p_data.has("level_bar") and p_data["level_bar"]:
+			p_data["level_bar"].value = p_data["level"] * 100
+			# Decay level
+			p_data["level"] = lerp(p_data["level"], 0.0, 10.0 * delta)
+
 func _process_mic_audio():
 	if capture_effect and capture_effect.can_get_buffer(BUFFER_SIZE):
 		var buffer = capture_effect.get_buffer(BUFFER_SIZE)
@@ -227,31 +235,47 @@ func _on_participant_joined(identity: String):
 func _on_participant_left(identity: String):
 	print("👋 Participant left: ", identity)
 	if participants.has(identity):
-		var player = participants[identity]
-		if player:
-			player.queue_free()
+		var p_data = participants[identity]
+		if p_data and p_data.get("player"):
+			p_data["player"].queue_free()
 		participants.erase(identity)
 		_update_participant_list()
 
 func _on_audio_frame(peer_id: String, frame: PackedVector2Array):
 	# Ensure participant exists in dictionary
 	if not participants.has(peer_id):
-		participants[peer_id] = null
+		_add_participant(peer_id, 0.0)
 		_update_participant_list()
 	
-	# Create audio player if needed
-	if participants[peer_id] == null:
-		_create_participant_audio(peer_id)
+	var p_data = participants[peer_id]
 	
-	var player = participants[peer_id]
-	if player:
+	# Create audio player if needed
+	if p_data["player"] == null:
+		_create_participant_audio(peer_id)
+		p_data = participants[peer_id] # Refresh ref
+	
+	# Calculate level
+	var max_amp = 0.0
+	for sample in frame:
+		var amp = max(abs(sample.x), abs(sample.y))
+		max_amp = max(max_amp, amp)
+	
+	# Update level (keep max for visibility)
+	p_data["level"] = max(p_data["level"], max_amp)
+
+	var player = p_data["player"]
+	if player and not p_data["muted"]:
 		var playback = player.get_stream_playback()
 		if playback:
 			playback.push_buffer(frame)
 
 func _create_participant_audio(peer_id: String):
 	# Only create if we don't already have a player for this participant
-	if not participants.has(peer_id) or participants[peer_id] == null:
+	if not participants.has(peer_id):
+		_add_participant(peer_id, 0.0)
+		
+	var p_data = participants[peer_id]
+	if p_data["player"] == null:
 		var player = AudioStreamPlayer.new()
 		var generator = AudioStreamGenerator.new()
 		generator.buffer_length = 0.1 # 100ms buffer
@@ -260,7 +284,8 @@ func _create_participant_audio(peer_id: String):
 		player.autoplay = true
 		add_child(player)
 		player.play()
-		participants[peer_id] = player
+		
+		p_data["player"] = player
 		print("   Created audio player for: ", peer_id)
 		_update_participant_list()
 
@@ -315,8 +340,12 @@ func _on_input_device_selected(index: int):
 func _add_participant(name: String, _level: float):
 	if not participants.has(name):
 		# Add participant with null audio player initially
-		# The player will be created when first audio frame arrives
-		participants[name] = null
+		participants[name] = {
+			"player": null,
+			"level": 0.0,
+			"level_bar": null,
+			"muted": false
+		}
 		print("   Added participant to list: ", name)
 
 
@@ -332,6 +361,7 @@ func _update_participant_list():
 	
 	# Add all participants
 	for participant_id in participants.keys():
+		var p_data = participants[participant_id]
 		var hbox = HBoxContainer.new()
 		
 		# Name label
@@ -340,18 +370,29 @@ func _update_participant_list():
 		name_label.custom_minimum_size = Vector2(150, 0)
 		hbox.add_child(name_label)
 		
-		# Status indicator (shows if audio player is active)
-		var status_label = Label.new()
-		var has_audio = participants[participant_id] != null
-		status_label.text = "🔊" if has_audio else "⏸️"
-		status_label.custom_minimum_size = Vector2(30, 0)
-		hbox.add_child(status_label)
+		# Mute Button
+		var mute_btn = Button.new()
+		mute_btn.text = "🔇" if p_data["muted"] else "🔊"
+		mute_btn.toggle_mode = true
+		mute_btn.button_pressed = p_data["muted"]
+		mute_btn.pressed.connect(_on_participant_mute_toggled.bind(participant_id, mute_btn))
+		hbox.add_child(mute_btn)
 		
 		# Audio level bar
 		var level_bar = ProgressBar.new()
 		level_bar.custom_minimum_size = Vector2(100, 20)
-		level_bar.value = 0 # No level info yet
+		level_bar.value = p_data["level"] * 100
 		level_bar.show_percentage = false
 		hbox.add_child(level_bar)
 		
+		# Store ref to bar
+		p_data["level_bar"] = level_bar
+		
 		participant_list.add_child(hbox)
+
+func _on_participant_mute_toggled(participant_id: String, btn: Button):
+	if participants.has(participant_id):
+		var p_data = participants[participant_id]
+		p_data["muted"] = !p_data["muted"]
+		btn.text = "🔇" if p_data["muted"] else "🔊"
+		print("Toggled mute for ", participant_id, ": ", p_data["muted"])
