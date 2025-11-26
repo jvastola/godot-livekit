@@ -195,7 +195,7 @@ impl LiveKitManager {
                     },
                     mic_sample_rate as u32,
                     1, // Mono
-                    0, // disable_processing (0 = false in new API)
+                    1000, // queue_size_ms - audio buffer queue size in milliseconds
                 );
                 
                 let track = livekit::track::LocalAudioTrack::create_audio_track(
@@ -218,31 +218,32 @@ impl LiveKitManager {
 
                 // Spawn a task to feed audio data to the source
                 tokio::spawn(async move {
+                    let mut buffer: Vec<i16> = Vec::new();
+                    // 10ms at 48kHz = 480 samples
+                    let samples_per_10ms = (mic_sample_rate / 100) as usize; 
+
                     while let Some(samples) = audio_rx.recv().await {
-                        // Convert f32 samples to i16 for LiveKit if needed, or use capture_frame
-                        // NativeAudioSource.capture_frame expects i16 usually, let's check docs or assume f32 support if available
-                        // The `webrtc` crate's NativeAudioSource usually takes i16 PCM.
-                        // We'll convert f32 (-1.0 to 1.0) to i16.
-                        let i16_samples: Vec<i16> = samples
-                            .iter()
-                            .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
-                            .collect();
-                        
-                        // 10ms chunks are preferred usually, but we'll push what we get
-                        // We need to know sample rate and channels. 48000, 1.
-                        // capture_frame(data: &[i16], sample_rate: u32, channels: usize, samples_per_channel: usize)
-                        // Wait, looking at typical APIs.
-                        // Assuming `capture_frame` exists on `NativeAudioSource`.
-                        // If not, we might need to look at `godot-livekit` reference implementation.
-                        // For now, let's assume `capture_frame` is available.
-                        
-                        let frame = AudioFrame {
-                            data: std::borrow::Cow::Borrowed(&i16_samples),
-                            sample_rate: mic_sample_rate as u32,
-                            num_channels: 1,
-                            samples_per_channel: i16_samples.len() as u32,
-                        };
-                        source.capture_frame(&frame).await.ok();
+                        // Convert f32 samples to i16 and append to buffer
+                        for sample in samples {
+                            let s = (sample.clamp(-1.0, 1.0) * 32767.0) as i16;
+                            buffer.push(s);
+                        }
+
+                        // Process chunks of 10ms
+                        while buffer.len() >= samples_per_10ms {
+                            let chunk: Vec<i16> = buffer.drain(0..samples_per_10ms).collect();
+                            
+                            let frame = AudioFrame {
+                                data: std::borrow::Cow::Owned(chunk),
+                                sample_rate: mic_sample_rate as u32,
+                                num_channels: 1,
+                                samples_per_channel: samples_per_10ms as u32,
+                            };
+                            
+                            if let Err(e) = source.capture_frame(&frame).await {
+                                godot_error!("Failed to capture audio frame: {:?}", e);
+                            }
+                        }
                     }
                 });
 
