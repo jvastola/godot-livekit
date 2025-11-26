@@ -221,11 +221,25 @@ func _on_connect_pressed():
 	livekit_manager.connect_to_room(server_url, token)
 
 func _on_disconnect_pressed():
-	# livekit_manager.disconnect_from_room() # Assuming this method exists or we just free it?
-	# The Rust code didn't implement disconnect explicitly in the new version, 
-	# but we can just reload the scene or implement it if needed.
-	# For now, let's just reload the scene to disconnect cleanly.
-	get_tree().reload_current_scene()
+	if livekit_manager:
+		livekit_manager.disconnect_from_room()
+	
+	# Reset UI state
+	status_label.text = "Disconnected"
+	connect_button.disabled = false
+	disconnect_button.disabled = true
+	
+	# Clear participant list
+	for child in participant_list.get_children():
+		child.queue_free()
+	
+	# Stop all participant audio players
+	for p_id in participants:
+		var p_data = participants[p_id]
+		if p_data and p_data.get("player"):
+			p_data["player"].queue_free()
+	
+	participants.clear()
 
 
 func _on_room_connected():

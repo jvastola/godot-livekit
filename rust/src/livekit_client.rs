@@ -34,6 +34,7 @@ pub struct LiveKitManager {
     audio_sender: Option<mpsc::UnboundedSender<Vec<f32>>>,
     is_connected: Arc<Mutex<bool>>,
     mic_sample_rate: i32,
+    disconnect_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 #[godot_api]
@@ -46,6 +47,7 @@ impl INode for LiveKitManager {
             audio_sender: None,
             is_connected: Arc::new(Mutex::new(false)),
             mic_sample_rate: 48000, // Default
+            disconnect_tx: None,
         }
     }
 
@@ -129,6 +131,22 @@ impl LiveKitManager {
     }
 
     #[func]
+    pub fn disconnect_from_room(&mut self) {
+        godot_print!("Disconnecting from room...");
+        
+        // Signal the async task to stop
+        if let Some(tx) = self.disconnect_tx.take() {
+            let _ = tx.send(());
+        }
+        
+        // Clear channels
+        self.audio_sender = None;
+        self.event_receiver = None;
+        
+        *self.is_connected.lock().unwrap() = false;
+    }
+
+    #[func]
     pub fn connect_to_room(&mut self, url: GString, token: GString) {
         let url = url.to_string();
         let token = token.to_string();
@@ -138,6 +156,10 @@ impl LiveKitManager {
 
         let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
         self.audio_sender = Some(audio_tx);
+        
+        // Create disconnect channel
+        let (disconnect_tx, mut disconnect_rx) = tokio::sync::oneshot::channel();
+        self.disconnect_tx = Some(disconnect_tx);
         
         let is_connected = self.is_connected.clone();
         let mic_sample_rate = self.mic_sample_rate;
@@ -224,54 +246,62 @@ impl LiveKitManager {
                     }
                 });
 
-                while let Some(event) = room_events.recv().await {
-                    match event {
-                        RoomEvent::ParticipantConnected(p) => {
-                            event_tx
-                                .send(InternalEvent::ParticipantJoined(p.identity().to_string()))
-                                .ok();
-                        }
-                        RoomEvent::ParticipantDisconnected(p) => {
-                            event_tx
-                                .send(InternalEvent::ParticipantLeft(p.identity().to_string()))
-                                .ok();
-                        }
-                        RoomEvent::TrackSubscribed {
-                            track,
-                            publication: _,
-                            participant,
-                        } => {
-                            if let livekit::track::RemoteTrack::Audio(audio_track) = track {
-                                let event_tx_clone = event_tx.clone();
-                                let participant_id = participant.identity().to_string();
-                                let mut stream = livekit::webrtc::audio_stream::native::NativeAudioStream::new(
-                                    audio_track.rtc_track(),
-                                    48000, // sample rate
-                                    1,     // channels
-                                );
+                loop {
+                    tokio::select! {
+                        Some(event) = room_events.recv() => {
+                            match event {
+                                RoomEvent::ParticipantConnected(p) => {
+                                    event_tx
+                                        .send(InternalEvent::ParticipantJoined(p.identity().to_string()))
+                                        .ok();
+                                }
+                                RoomEvent::ParticipantDisconnected(p) => {
+                                    event_tx
+                                        .send(InternalEvent::ParticipantLeft(p.identity().to_string()))
+                                        .ok();
+                                }
+                                RoomEvent::TrackSubscribed {
+                                    track,
+                                    publication: _,
+                                    participant,
+                                } => {
+                                    if let livekit::track::RemoteTrack::Audio(audio_track) = track {
+                                        let event_tx_clone = event_tx.clone();
+                                        let participant_id = participant.identity().to_string();
+                                        let mut stream = livekit::webrtc::audio_stream::native::NativeAudioStream::new(
+                                            audio_track.rtc_track(),
+                                            48000, // sample rate
+                                            1,     // channels
+                                        );
 
-                                tokio::spawn(async move {
-                                    while let Some(frame) = stream.next().await {
-                                        // frame is usually Vec<i16>
-                                        // Convert to Vector2 (stereo) for Godot
-                                        // Godot expects PackedVector2Array for stereo audio
-                                        let mut godot_frame = Vec::with_capacity(frame.data.len());
-                                        for &sample in frame.data.iter() {
-                                            let f = (sample as f32) / 32768.0;
-                                            godot_frame.push(Vector2::new(f, f));
-                                        }
-                                        
-                                        event_tx_clone
-                                            .send(InternalEvent::AudioFrame(
-                                                participant_id.clone(),
-                                                godot_frame,
-                                            ))
-                                            .ok();
+                                        tokio::spawn(async move {
+                                            while let Some(frame) = stream.next().await {
+                                                // frame is usually Vec<i16>
+                                                // Convert to Vector2 (stereo) for Godot
+                                                // Godot expects PackedVector2Array for stereo audio
+                                                let mut godot_frame = Vec::with_capacity(frame.data.len());
+                                                for &sample in frame.data.iter() {
+                                                    let f = (sample as f32) / 32768.0;
+                                                    godot_frame.push(Vector2::new(f, f));
+                                                }
+                                                
+                                                event_tx_clone
+                                                    .send(InternalEvent::AudioFrame(
+                                                        participant_id.clone(),
+                                                        godot_frame,
+                                                    ))
+                                                    .ok();
+                                            }
+                                        });
                                     }
-                                });
+                                }
+                                _ => {}
                             }
                         }
-                        _ => {}
+                        _ = &mut disconnect_rx => {
+                            godot_print!("Disconnect signal received, stopping room task");
+                            break;
+                        }
                     }
                 }
                 
