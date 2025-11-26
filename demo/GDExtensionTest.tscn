@@ -64,6 +64,10 @@ layout_mode = 2
 placeholder_text = "Paste your token here"
 secret = true
 
+[node name="AutoConnectButton" type="Button" parent="Panel/VBoxContainer"]
+layout_mode = 2
+text = "⚡ Auto Connect (Sandbox)"
+
 [node name="ConnectButton" type="Button" parent="Panel/VBoxContainer"]
 layout_mode = 2
 text = "🔌 Connect"
@@ -124,3 +128,5 @@ text = "👥 Participants (0)"
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 5
+
+[node name="SandboxHTTPRequest" type="HTTPRequest" parent="."]

@@ -8,6 +8,9 @@ extends Control
 @onready var disconnect_button = $Panel/VBoxContainer/DisconnectButton
 @onready var status_label = $Panel/VBoxContainer/StatusLabel
 
+@onready var auto_connect_button = $Panel/VBoxContainer/AutoConnectButton
+@onready var sandbox_http_request = $SandboxHTTPRequest
+
 # Audio controls
 @onready var mic_section = $Panel/VBoxContainer/MicSection
 @onready var mic_level_bar = $Panel/VBoxContainer/MicSection/MicLevelBar
@@ -69,6 +72,10 @@ func _ready():
 	mute_button.pressed.connect(_on_mute_toggle)
 	threshold_slider.value_changed.connect(_on_threshold_changed)
 	
+	# Auto Connect signals
+	auto_connect_button.pressed.connect(_on_auto_connect_pressed)
+	sandbox_http_request.request_completed.connect(_on_sandbox_request_completed)
+	
 	# Create Input Device Selector
 	input_device_option = OptionButton.new()
 	input_device_option.item_selected.connect(_on_input_device_selected)
@@ -124,6 +131,55 @@ func _ready():
 	
 	# Fix UI Overflow: Wrap ParticipantList in a ScrollContainer
 	_setup_scroll_container()
+
+func _on_auto_connect_pressed():
+	status_label.text = "⏳ Fetching Sandbox Token..."
+	connect_button.disabled = true
+	
+	var url = "https://cloud-api.livekit.io/api/sandbox/connection-details"
+	var headers = [
+		"X-Sandbox-ID: godot-247cr9",
+		"Content-Type: application/json"
+	]
+	var body = JSON.stringify({
+		"room_name": "godot-demo",
+		"participant_name": "user-" + str(randi() % 10000)
+	})
+	
+	var error = sandbox_http_request.request(url, headers, HTTPClient.METHOD_POST, body)
+	if error != OK:
+		status_label.text = "❌ HTTP Request Failed: " + str(error)
+		connect_button.disabled = false
+
+func _on_sandbox_request_completed(result, response_code, headers, body):
+	if result != HTTPRequest.RESULT_SUCCESS:
+		status_label.text = "❌ Request Failed"
+		connect_button.disabled = false
+		return
+		
+	if response_code != 200:
+		status_label.text = "❌ API Error: " + str(response_code)
+		print("Response body: ", body.get_string_from_utf8())
+		connect_button.disabled = false
+		return
+		
+	var json = JSON.parse_string(body.get_string_from_utf8())
+	if json:
+		var server_url = json.get("serverUrl", "")
+		var token = json.get("participantToken", "")
+		
+		if server_url and token:
+			server_entry.text = server_url
+			token_entry.text = token
+			print("✅ Received Sandbox Token for: ", json.get("participantName"))
+			
+			# Auto connect
+			_on_connect_pressed()
+		else:
+			status_label.text = "❌ Invalid Response"
+	else:
+		status_label.text = "❌ JSON Parse Error"
+		connect_button.disabled = false
 
 func _setup_scroll_container():
 	var parent = participant_list.get_parent()
