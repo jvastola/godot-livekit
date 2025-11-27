@@ -2,33 +2,36 @@ extends Control
 
 # LiveKit Voice Chat UI with Audio Visualization
 
-@onready var server_entry = $Panel/VBoxContainer/ServerEntry
-@onready var token_entry = $Panel/VBoxContainer/TokenEntry
-@onready var connect_button = $Panel/VBoxContainer/ConnectButton
-@onready var disconnect_button = $Panel/VBoxContainer/DisconnectButton
-@onready var status_label = $Panel/VBoxContainer/StatusLabel
+# Main UI References
+@onready var server_entry = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Inputs/ServerEntry
+@onready var token_entry = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Inputs/TokenEntry
+@onready var connect_button = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Buttons/ConnectButton
+@onready var disconnect_button = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Buttons/DisconnectButton
+@onready var auto_connect_button = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Buttons/AutoConnectButton
+@onready var status_label = $CenterContainer/MainCard/Margin/VBox/Header/StatusLabel
+@onready var participants_title = $CenterContainer/MainCard/Margin/VBox/ParticipantsSection/Header/Title
 
-@onready var auto_connect_button = $Panel/VBoxContainer/AutoConnectButton
 @onready var sandbox_http_request = $SandboxHTTPRequest
 
 # Audio controls
-@onready var mic_section = $Panel/VBoxContainer/MicSection
-@onready var mic_level_bar = $Panel/VBoxContainer/MicSection/MicLevelBar
-@onready var threshold_slider = $Panel/VBoxContainer/MicSection/ThresholdSlider
-@onready var threshold_label = $Panel/VBoxContainer/MicSection/ThresholdLabel
-@onready var mute_button = $Panel/VBoxContainer/MicSection/MuteButton
+@onready var audio_section = $CenterContainer/MainCard/Margin/VBox/AudioSection
+@onready var mic_level_bar = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/VBoxContainer/MicLevelBar
+@onready var threshold_slider = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/VBoxContainer/ThresholdContainer/ThresholdSlider
+@onready var threshold_label = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/VBoxContainer/ThresholdContainer/ThresholdLabel
+@onready var mute_button = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/MuteButton
+@onready var device_container = $CenterContainer/MainCard/Margin/VBox/AudioSection/DeviceContainer
 
 var hear_audio_check: CheckBox
 var input_device_option: OptionButton
 var mic_threshold: float = 0.1
 var is_muted: bool = false
 var hear_own_audio: bool = false
-const BUFFER_SIZE = 4096 # Increased to capture all frames (16ms @ 48kHz is ~800 frames)
+const BUFFER_SIZE = 4096
 var audio_bus_name = "LiveKit Mic"
 var audio_bus_idx = -1
 
 # Participants
-@onready var participant_list = $Panel/VBoxContainer/ParticipantList
+@onready var participant_list = $CenterContainer/MainCard/Margin/VBox/ParticipantsSection/ScrollContainer/ParticipantList
 
 var livekit_manager: Node
 var participants = {} # Dictionary of participant_id -> { "player": AudioStreamPlayer, "level": float, "level_bar": ProgressBar, "muted": bool, "volume": float }
@@ -77,40 +80,49 @@ func _ready():
 	sandbox_http_request.request_completed.connect(_on_sandbox_request_completed)
 	
 	# Create Input Device Selector
+	var device_row = HBoxContainer.new()
+	device_container.add_child(device_row)
+	
+	var device_label = Label.new()
+	device_label.text = "Input Device:"
+	device_label.custom_minimum_size = Vector2(100, 0)
+	device_row.add_child(device_label)
+	
 	input_device_option = OptionButton.new()
+	input_device_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	input_device_option.item_selected.connect(_on_input_device_selected)
-	mic_section.add_child(input_device_option)
+	device_row.add_child(input_device_option)
 	_update_input_device_list()
 
 	# Create Hear Own Audio checkbox
 	hear_audio_check = CheckBox.new()
-	hear_audio_check.text = "Hear Own Audio"
+	hear_audio_check.text = "Hear Self"
 	hear_audio_check.button_pressed = hear_own_audio
 	hear_audio_check.toggled.connect(_on_hear_audio_toggled)
-	mic_section.add_child(hear_audio_check)
+	device_row.add_child(hear_audio_check)
 	
 	# Create Gain slider
-	var gain_container = HBoxContainer.new()
-	gain_container.add_theme_constant_override("separation", 10)
-	mic_section.add_child(gain_container)
+	var gain_row = HBoxContainer.new()
+	device_container.add_child(gain_row)
 	
 	var gain_title = Label.new()
-	gain_title.text = "Mic Gain (dB):"
+	gain_title.text = "Mic Gain:"
 	gain_title.custom_minimum_size = Vector2(100, 0)
-	gain_container.add_child(gain_title)
+	gain_row.add_child(gain_title)
 	
 	var gain_slider = HSlider.new()
-	gain_slider.custom_minimum_size = Vector2(150, 0)
+	gain_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	gain_slider.min_value = 0.0
 	gain_slider.max_value = 60.0
 	gain_slider.value = 0.0 # Default gain
 	gain_slider.value_changed.connect(_on_gain_changed)
-	gain_container.add_child(gain_slider)
+	gain_row.add_child(gain_slider)
 	
 	var gain_value_label = Label.new()
-	gain_value_label.text = "0.0 dB"
-	gain_value_label.custom_minimum_size = Vector2(60, 0)
-	gain_container.add_child(gain_value_label)
+	gain_value_label.text = "0 dB"
+	gain_value_label.custom_minimum_size = Vector2(50, 0)
+	gain_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	gain_row.add_child(gain_value_label)
 	
 	# Store reference for updates
 	gain_slider.set_meta("value_label", gain_value_label)
@@ -121,20 +133,17 @@ func _ready():
 	_on_threshold_changed(mic_threshold)
 	
 	# Set local server values for easy testing
-	# For CLIENT 1 - use client-1 token
 	server_entry.text = "ws://localhost:7880"
 	token_entry.text = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjQxODc2NDcsImlzcyI6ImRldmtleSIsIm5iZiI6MTc2NDEwMTI0Nywic3ViIjoiY2xpZW50LTEiLCJ2aWRlbyI6eyJyb29tIjoidGVzdC1yb29tIiwicm9vbUpvaW4iOnRydWUsImNhblB1Ymxpc2giOnRydWUsImNhblN1YnNjcmliZSI6dHJ1ZX19.tR0faOukMG6GJFXrCRVtPmEJhnbig_pirRyjcqvqy3M"
-	# For CLIENT 2, change token to: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjQxODc2NDcsImlzcyI6ImRldmtleSIsIm5iZiI6MTc2NDEwMTI0Nywic3ViIjoiY2xpZW50LTIiLCJ2aWRlbyI6eyJyb29tIjoidGVzdC1yb29tIiwicm9vbUpvaW4iOnRydWUsImNhblB1Ymxpc2giOnRydWUsImNhblN1YnNjcmliZSI6dHJ1ZX19.ilVW4UOCDu-OD98Ytfx3IboTIOx6d8Rm5N7aLSQv1ec
 	
 	status_label.text = "Ready to connect"
 	print("✅ LiveKit Audio UI Ready!")
 	
-	# Fix UI Overflow: Wrap ParticipantList in a ScrollContainer
-	_setup_scroll_container()
 
 func _on_auto_connect_pressed():
 	status_label.text = "⏳ Fetching Sandbox Token..."
 	connect_button.disabled = true
+	auto_connect_button.disabled = true
 	
 	var url = "https://cloud-api.livekit.io/api/sandbox/connection-details"
 	var headers = [
@@ -150,8 +159,11 @@ func _on_auto_connect_pressed():
 	if error != OK:
 		status_label.text = "❌ HTTP Request Failed: " + str(error)
 		connect_button.disabled = false
+		auto_connect_button.disabled = false
 
 func _on_sandbox_request_completed(result, response_code, headers, body):
+	auto_connect_button.disabled = false
+	
 	if result != HTTPRequest.RESULT_SUCCESS:
 		status_label.text = "❌ Request Failed"
 		connect_button.disabled = false
@@ -181,23 +193,6 @@ func _on_sandbox_request_completed(result, response_code, headers, body):
 		status_label.text = "❌ JSON Parse Error"
 		connect_button.disabled = false
 
-func _setup_scroll_container():
-	var parent = participant_list.get_parent()
-	if parent:
-		var scroll = ScrollContainer.new()
-		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		scroll.custom_minimum_size.y = 200 # Ensure some height
-		
-		# We need to move participant_list inside scroll
-		# But we can't easily move it if it's an onready node that might be referenced elsewhere by path
-		# Instead, let's just reparent it.
-		parent.remove_child(participant_list)
-		parent.add_child(scroll)
-		scroll.add_child(participant_list)
-		
-		# Ensure list expands
-		participant_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		participant_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 func _setup_audio():
 	# Always create a new bus to ensure clean state, matching mic_visualizer.gd
@@ -255,7 +250,7 @@ func _process(delta):
 		if audio_bus_idx != -1:
 			var is_bus_muted = AudioServer.is_bus_mute(audio_bus_idx)
 			var is_player_playing = mic_player.playing
-			print("🔊 [Debug] Bus Muted: %s | Player Playing: %s | Hear Own: %s" % [is_bus_muted, is_player_playing, hear_own_audio])
+			# print("🔊 [Debug] Bus Muted: %s | Player Playing: %s | Hear Own: %s" % [is_bus_muted, is_player_playing, hear_own_audio])
 			
 			# Force play if stopped
 			if not is_player_playing:
@@ -286,10 +281,6 @@ func _process_mic_audio():
 		for frame in buffer:
 			var amp = max(abs(frame.x), abs(frame.y))
 			max_amp = max(max_amp, amp)
-		
-		# Debug buffer content (throttled)
-		if _debug_timer > 1.9: # Print just before the other debug print
-			print("📊 [Debug] Max Amp: ", max_amp, " | Buffer Size: ", buffer.size())
 		
 		# Update mic level bar
 		mic_level_bar.value = max_amp * 100
@@ -435,7 +426,7 @@ func _on_error(msg: String):
 
 func _on_mute_toggle():
 	is_muted = !is_muted
-	mute_button.text = "🔇 Muted" if is_muted else "🎤 Mic Active"
+	mute_button.text = "🔇 Muted" if is_muted else "🎤 Active"
 	
 	# We don't stop the player so we can still see visualization if we wanted,
 	# but for now let's just stop pushing audio in _process_mic_audio.
@@ -461,10 +452,10 @@ func _on_gain_changed(value: float):
 		amplify_effect.volume_db = value
 		print("🎚️ Mic gain changed to: ", value, " dB")
 		
-		# Update the label (find it via the slider's meta)
-		# We need to find the slider that called this... let's use a different approach
-		# Actually, we can just update any label we find near the gain controls
-		# For simplicity, let's just print for now and rely on the slider's built-in value display
+		# Update label
+		var label = get_node("CenterContainer/MainCard/Margin/VBox/AudioSection/DeviceContainer").get_child(1).get_child(2)
+		if label:
+			label.text = "%.1f dB" % value
 
 func _update_input_device_list():
 	input_device_option.clear()
@@ -516,20 +507,60 @@ func _update_participant_list():
 		child.queue_free()
 	
 	# Update participant count in title
-	var participants_title = $Panel/VBoxContainer/ParticipantsTitle
 	if participants_title:
-		participants_title.text = "👥 Participants (%d)" % participants.size()
+		participants_title.text = "PARTICIPANTS (%d)" % participants.size()
 	
 	# Add all participants
 	for participant_id in participants.keys():
 		var p_data = participants[participant_id]
+		
+		# Create a styled panel for the row
+		var row_panel = PanelContainer.new()
+		var style = StyleBoxFlat.new()
+		style.bg_color = Color(0.18, 0.20, 0.25)
+		style.corner_radius_top_left = 6
+		style.corner_radius_top_right = 6
+		style.corner_radius_bottom_right = 6
+		style.corner_radius_bottom_left = 6
+		style.content_margin_left = 10
+		style.content_margin_right = 10
+		style.content_margin_top = 8
+		style.content_margin_bottom = 8
+		row_panel.add_theme_stylebox_override("panel", style)
+		
 		var hbox = HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 15)
+		row_panel.add_child(hbox)
+		
+		# Avatar (Placeholder)
+		var avatar = ColorRect.new()
+		avatar.custom_minimum_size = Vector2(32, 32)
+		avatar.color = Color(0.3, 0.5, 0.9) # Blue avatar
+		avatar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		
+		# Add letter
+		var letter = Label.new()
+		letter.text = participant_id.substr(0, 1).to_upper()
+		letter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		letter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		letter.anchors_preset = Control.PRESET_FULL_RECT
+		avatar.add_child(letter)
+		
+		hbox.add_child(avatar)
 		
 		# Name label
 		var name_label = Label.new()
 		name_label.text = participant_id
-		name_label.custom_minimum_size = Vector2(150, 0)
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(name_label)
+		
+		# Audio level bar
+		var level_bar = ProgressBar.new()
+		level_bar.custom_minimum_size = Vector2(80, 8)
+		level_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		level_bar.value = p_data["level"] * 100
+		level_bar.show_percentage = false
+		hbox.add_child(level_bar)
 		
 		# Mute Button
 		var mute_btn = Button.new()
@@ -539,16 +570,10 @@ func _update_participant_list():
 		mute_btn.pressed.connect(_on_participant_mute_toggled.bind(participant_id, mute_btn))
 		hbox.add_child(mute_btn)
 		
-		# Audio level bar
-		var level_bar = ProgressBar.new()
-		level_bar.custom_minimum_size = Vector2(100, 20)
-		level_bar.value = p_data["level"] * 100
-		level_bar.show_percentage = false
-		hbox.add_child(level_bar)
-		
 		# Volume Slider
 		var vol_slider = HSlider.new()
-		vol_slider.custom_minimum_size = Vector2(100, 0)
+		vol_slider.custom_minimum_size = Vector2(80, 0)
+		vol_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		vol_slider.min_value = 0.0
 		vol_slider.max_value = 2.0
 		vol_slider.step = 0.1
@@ -559,7 +584,7 @@ func _update_participant_list():
 		# Store ref to bar
 		p_data["level_bar"] = level_bar
 		
-		participant_list.add_child(hbox)
+		participant_list.add_child(row_panel)
 
 func _on_participant_volume_changed(value: float, participant_id: String):
 	if participants.has(participant_id):
