@@ -56,12 +56,19 @@ jobs:
           path: rust/target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       
+      - name: Install dependencies (Linux)
+        if: matrix.platform.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libva-dev libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
       - name: Build extension
         working-directory: rust
         run: cargo build --release --target ${{ matrix.platform.target }}
       
       - name: Copy library (Windows)
         if: matrix.platform.os == 'windows-latest'
+        shell: bash
         run: |
           mkdir -p addons/godot-livekit/bin/windows
           cp rust/target/${{ matrix.platform.target }}/release/godot_livekit.dll addons/godot-livekit/bin/windows/
