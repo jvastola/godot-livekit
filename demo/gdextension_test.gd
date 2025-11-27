@@ -3,26 +3,35 @@ extends Control
 # LiveKit Voice Chat UI with Audio Visualization
 
 # Main UI References
-@onready var server_entry = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Inputs/ServerEntry
-@onready var token_entry = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Inputs/TokenEntry
-@onready var connect_button = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Buttons/ConnectButton
-@onready var disconnect_button = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Buttons/DisconnectButton
-@onready var auto_connect_button = $CenterContainer/MainCard/Margin/VBox/ConnectionSection/Buttons/AutoConnectButton
-@onready var status_label = $CenterContainer/MainCard/Margin/VBox/Header/StatusLabel
-@onready var participants_title = $CenterContainer/MainCard/Margin/VBox/ParticipantsSection/Header/Title
+@onready var server_entry = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/ConnectionSection/Inputs/ServerEntry
+@onready var token_entry = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/ConnectionSection/Inputs/TokenEntry
+@onready var connect_button = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/ConnectionSection/Buttons/ConnectButton
+@onready var disconnect_button = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/ConnectionSection/Buttons/DisconnectButton
+@onready var auto_connect_button = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/ConnectionSection/Buttons/AutoConnectButton
+@onready var status_label = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/Header/StatusLabel
+@onready var participants_title = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/ParticipantsSection/Header/Title
+
+# Username UI
+@onready var username_entry = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/Header/UsernameSection/UsernameEntry
+@onready var update_name_button = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/Header/UsernameSection/UpdateNameButton
+
+# Chat UI
+@onready var chat_messages_container = $CenterContainer/MainCard/Margin/MainLayout/ChatSection/ChatDisplay/ChatMessages
+@onready var message_entry = $CenterContainer/MainCard/Margin/MainLayout/ChatSection/ChatInput/MessageEntry
+@onready var send_button = $CenterContainer/MainCard/Margin/MainLayout/ChatSection/ChatInput/SendButton
 
 @onready var sandbox_http_request = $SandboxHTTPRequest
 
 # Audio controls
-@onready var audio_section = $CenterContainer/MainCard/Margin/VBox/AudioSection
-@onready var mic_level_bar = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/VBoxContainer/MicLevelBar
-@onready var threshold_slider = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/VBoxContainer/ThresholdContainer/ThresholdSlider
-@onready var threshold_label = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/VBoxContainer/ThresholdContainer/ThresholdLabel
-@onready var mute_button = $CenterContainer/MainCard/Margin/VBox/AudioSection/Controls/MuteButton
-@onready var device_container = $CenterContainer/MainCard/Margin/VBox/AudioSection/DeviceContainer
+@onready var audio_section = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/AudioSection
+@onready var mic_level_bar = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/AudioSection/Controls/VBoxContainer/MicLevelBar
+@onready var threshold_slider = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/AudioSection/Controls/VBoxContainer/ThresholdContainer/ThresholdSlider
+@onready var threshold_label = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/AudioSection/Controls/VBoxContainer/ThresholdContainer/ThresholdLabel
+@onready var mute_button = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/AudioSection/Controls/MuteButton
+@onready var device_container = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/AudioSection/DeviceContainer
 
 var hear_audio_check: CheckBox
-var input_device_option: OptionButton
+var input_device_option: OptionButton # Will be added dynamically
 var mic_threshold: float = 0.1
 var is_muted: bool = false
 var hear_own_audio: bool = false
@@ -30,8 +39,13 @@ const BUFFER_SIZE = 4096
 var audio_bus_name = "LiveKit Mic"
 var audio_bus_idx = -1
 
+# Chat and username
+var local_username: String = "User-" + str(randi() % 10000)
+var chat_messages = [] # Array of {sender: String, message: String, timestamp: int}
+var participant_usernames = {} # Dictionary of identity -> username
+
 # Participants
-@onready var participant_list = $CenterContainer/MainCard/Margin/VBox/ParticipantsSection/ScrollContainer/ParticipantList
+@onready var participant_list = $CenterContainer/MainCard/Margin/MainLayout/LeftColumn/ParticipantsSection/ScrollContainer/ParticipantList
 
 var livekit_manager: Node
 var participants = {} # Dictionary of participant_id -> { "player": AudioStreamPlayer, "level": float, "level_bar": ProgressBar, "muted": bool, "volume": float }
@@ -57,6 +71,8 @@ func _ready():
 		livekit_manager.participant_joined.connect(_on_participant_joined)
 		livekit_manager.participant_left.connect(_on_participant_left)
 		livekit_manager.on_audio_frame.connect(_on_audio_frame)
+		livekit_manager.chat_message_received.connect(_on_chat_message_received)
+		livekit_manager.participant_name_changed.connect(_on_participant_name_changed)
 		livekit_manager.error_occurred.connect(_on_error)
 		
 		# Set sample rate
@@ -74,6 +90,14 @@ func _ready():
 	disconnect_button.pressed.connect(_on_disconnect_pressed)
 	mute_button.pressed.connect(_on_mute_toggle)
 	threshold_slider.value_changed.connect(_on_threshold_changed)
+	
+	# Username UI
+	update_name_button.pressed.connect(_on_update_name_pressed)
+	username_entry.text = local_username
+	
+	# Chat UI
+	send_button.pressed.connect(_on_send_button_pressed)
+	message_entry.text_submitted.connect(_on_message_submitted)
 	
 	# Auto Connect signals
 	auto_connect_button.pressed.connect(_on_auto_connect_pressed)
@@ -453,7 +477,8 @@ func _on_gain_changed(value: float):
 		print("🎚️ Mic gain changed to: ", value, " dB")
 		
 		# Update label
-		var label = get_node("CenterContainer/MainCard/Margin/VBox/AudioSection/DeviceContainer").get_child(1).get_child(2)
+		# Update label
+		var label = get_node("CenterContainer/MainCard/Margin/MainLayout/LeftColumn/AudioSection/DeviceContainer").get_child(1).get_child(2)
 		if label:
 			label.text = "%.1f dB" % value
 
@@ -550,7 +575,9 @@ func _update_participant_list():
 		
 		# Name label
 		var name_label = Label.new()
-		name_label.text = participant_id
+		# Use username if available, otherwise use identity
+		var display_name = participant_usernames.get(participant_id, participant_id)
+		name_label.text = display_name
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(name_label)
 		
@@ -597,3 +624,93 @@ func _on_participant_mute_toggled(participant_id: String, btn: Button):
 		p_data["muted"] = !p_data["muted"]
 		btn.text = "🔇" if p_data["muted"] else "🔊"
 		print("Toggled mute for ", participant_id, ": ", p_data["muted"])
+
+
+# Chat and Username handlers
+func _on_chat_message_received(sender: String, message: String, timestamp: int):
+	print("💬 Chat from ", sender, ": ", message)
+	
+	# Get username or fallback to identity
+	var sender_name = participant_usernames.get(sender, sender)
+	
+	# Store message
+	chat_messages.append({
+		"sender": sender_name,
+		"message": message,
+		"timestamp": timestamp
+	})
+	
+	# Update chat UI if it exists
+	_update_chat_ui()
+
+func _on_participant_name_changed(identity: String, username: String):
+	print("👤 Name changed for ", identity, ": ", username)
+	participant_usernames[identity] = username
+	
+	# Update participant list to show new name
+	_update_participant_list()
+
+func _send_chat_message(message: String):
+	if livekit_manager and livekit_manager.is_room_connected():
+		livekit_manager.send_chat_message(message)
+		
+		# Add own message to chat (won't receive it back from server)
+		chat_messages.append({
+			"sender": local_username,
+			"message": message,
+			"timestamp": Time.get_unix_time_from_system()
+		})
+		_update_chat_ui()
+	else:
+		print("⚠️ Cannot send chat: not connected")
+
+func _update_local_username(new_name: String):
+	if new_name.strip_edges().is_empty():
+		return
+		
+	local_username = new_name
+	if livekit_manager and livekit_manager.is_room_connected():
+		livekit_manager.update_username(new_name)
+		print("✅ Username updated to: ", new_name)
+		
+		# Manually trigger local update since we might not get the event back for ourselves immediately
+		# or at all depending on how LiveKit handles local metadata updates
+		var identity = livekit_manager.get_local_identity() if livekit_manager.has_method("get_local_identity") else "local"
+		_on_participant_name_changed(identity, new_name)
+	else:
+		print("⚠️ Not connected. Username will be sent on connect.")
+
+func _update_chat_ui():
+	# Clear existing messages
+	for child in chat_messages_container.get_children():
+		child.queue_free()
+	
+	# Add all messages
+	for msg in chat_messages:
+		var label = Label.new()
+		label.text = "[%s]: %s" % [msg["sender"], msg["message"]]
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		chat_messages_container.add_child(label)
+		
+	# Scroll to bottom (deferred to wait for layout)
+	await get_tree().process_frame
+	if chat_messages_container.get_parent() is ScrollContainer:
+		var scroll = chat_messages_container.get_parent()
+		scroll.set_v_scroll(scroll.get_v_scroll_bar().max_value)
+
+func _on_send_button_pressed():
+	var msg = message_entry.text.strip_edges()
+	if not msg.is_empty():
+		_send_chat_message(msg)
+		message_entry.text = ""
+
+func _on_message_submitted(text: String):
+	var msg = text.strip_edges()
+	if not msg.is_empty():
+		_send_chat_message(msg)
+		message_entry.text = ""
+
+func _on_update_name_pressed():
+	var new_name = username_entry.text.strip_edges()
+	if not new_name.is_empty():
+		_update_local_username(new_name)

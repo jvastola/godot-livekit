@@ -20,6 +20,8 @@ enum InternalEvent {
     ParticipantJoined(String),
     ParticipantLeft(String),
     AudioFrame(String, Vec<Vector2>),
+    ChatMessage(String, String, u64), // sender_identity, message, timestamp
+    ParticipantMetadataChanged(String, String), // identity, username
     Error(String),
 }
 
@@ -32,6 +34,7 @@ pub struct LiveKitManager {
     runtime: Option<Runtime>,
     event_receiver: Option<mpsc::UnboundedReceiver<InternalEvent>>,
     audio_sender: Option<mpsc::UnboundedSender<Vec<f32>>>,
+    room: Arc<Mutex<Option<Arc<Room>>>>, // Store room for sending messages
     is_connected: Arc<Mutex<bool>>,
     mic_sample_rate: i32,
     disconnect_tx: Option<tokio::sync::oneshot::Sender<()>>,
@@ -45,6 +48,7 @@ impl INode for LiveKitManager {
             runtime: None,
             event_receiver: None,
             audio_sender: None,
+            room: Arc::new(Mutex::new(None)),
             is_connected: Arc::new(Mutex::new(false)),
             mic_sample_rate: 48000, // Default
             disconnect_tx: None,
@@ -94,6 +98,18 @@ impl INode for LiveKitManager {
                         &[id.to_variant(), packed.to_variant()],
                     );
                 }
+                InternalEvent::ChatMessage(sender, message, timestamp) => {
+                    self.base_mut().emit_signal(
+                        "chat_message_received",
+                        &[sender.to_variant(), message.to_variant(), (timestamp as i64).to_variant()],
+                    );
+                }
+                InternalEvent::ParticipantMetadataChanged(identity, username) => {
+                    self.base_mut().emit_signal(
+                        "participant_name_changed",
+                        &[identity.to_variant(), username.to_variant()],
+                    );
+                }
                 InternalEvent::Error(msg) => {
                     godot_error!("LiveKit Error: {}", msg);
                     self.base_mut()
@@ -118,6 +134,10 @@ impl LiveKitManager {
     fn error_occurred(message: GString);
     #[signal]
     fn on_audio_frame(peer_id: GString, frame: PackedVector2Array);
+    #[signal]
+    fn chat_message_received(sender: GString, message: GString, timestamp: i64);
+    #[signal]
+    fn participant_name_changed(identity: GString, username: GString);
 
     #[func]
     pub fn set_mic_sample_rate(&mut self, rate: i32) {
@@ -139,9 +159,10 @@ impl LiveKitManager {
             let _ = tx.send(());
         }
         
-        // Clear channels
+        // Clear channels and room
         self.audio_sender = None;
         self.event_receiver = None;
+        *self.room.lock().unwrap() = None;
         
         *self.is_connected.lock().unwrap() = false;
     }
@@ -162,6 +183,7 @@ impl LiveKitManager {
         self.disconnect_tx = Some(disconnect_tx);
         
         let is_connected = self.is_connected.clone();
+        let room_storage = self.room.clone(); // Clone the Arc<Mutex> to store room later
         let mic_sample_rate = self.mic_sample_rate;
 
         if let Some(runtime) = &self.runtime {
@@ -184,6 +206,21 @@ impl LiveKitManager {
                     event_tx
                         .send(InternalEvent::ParticipantJoined(participant.identity().to_string()))
                         .ok();
+                    
+                    // Check for existing metadata
+                    let metadata = participant.metadata();
+                    if !metadata.is_empty() {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&metadata) {
+                            if let Some(username) = json.get("username").and_then(|v| v.as_str()) {
+                                event_tx
+                                    .send(InternalEvent::ParticipantMetadataChanged(
+                                        participant.identity().to_string(),
+                                        username.to_string(),
+                                    ))
+                                    .ok();
+                            }
+                        }
+                    }
                 }
 
                 // Create a native audio source for the microphone
@@ -215,6 +252,10 @@ impl LiveKitManager {
                         .send(InternalEvent::Error(format!("Failed to publish mic: {}", e)))
                         .ok();
                 }
+                
+                // Store the room reference for sending messages
+                let room_arc = Arc::new(room);
+                *room_storage.lock().unwrap() = Some(room_arc.clone());
 
                 // Spawn a task to feed audio data to the source
                 tokio::spawn(async move {
@@ -293,7 +334,36 @@ impl LiveKitManager {
                                                     ))
                                                     .ok();
                                             }
-                                        });
+                                         });
+                                    }
+                                }
+                                RoomEvent::ChatMessage { message, participant } => {
+                                    // Use built-in ChatMessage event
+                                    let sender_identity = participant
+                                        .map(|p| p.identity().to_string())
+                                        .unwrap_or_else(|| "Unknown".to_string());
+                                    
+                                    event_tx
+                                        .send(InternalEvent::ChatMessage(
+                                            sender_identity,
+                                            message.message,
+                                            message.timestamp as u64,
+                                        ))
+                                        .ok();
+                                }
+                                RoomEvent::ParticipantMetadataChanged { participant, old_metadata: _, metadata } => {
+                                    // Extract username from metadata
+                                    if !metadata.is_empty() {
+                                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&metadata) {
+                                            if let Some(username) = json.get("username").and_then(|v| v.as_str()) {
+                                                event_tx
+                                                    .send(InternalEvent::ParticipantMetadataChanged(
+                                                        participant.identity().to_string(),
+                                                        username.to_string(),
+                                                    ))
+                                                    .ok();
+                                            }
+                                        }
                                     }
                                 }
                                 _ => {}
@@ -324,6 +394,63 @@ impl LiveKitManager {
             
             sender.send(samples).ok();
         }
+    }
+
+    #[func]
+    pub fn send_chat_message(&self, message: GString) {
+        let room = self.room.lock().unwrap();
+        if let Some(room) = room.as_ref() {
+            let room_clone = room.clone();
+            let msg = message.to_string();
+            
+            if let Some(runtime) = &self.runtime {
+                runtime.spawn(async move {
+                    // Use LiveKit's built-in send_chat_message
+                    if let Err(e) = room_clone.local_participant()
+                        .send_chat_message(msg, None, None)
+                        .await
+                    {
+                        godot_error!("Failed to send chat message: {:?}", e);
+                    }
+                });
+            }
+        } else {
+            godot_warn!("Cannot send chat message: not connected to room");
+        }
+    }
+
+    #[func]
+    pub fn update_username(&self, new_name: GString) {
+        let room = self.room.lock().unwrap();
+        if let Some(room) = room.as_ref() {
+            let room_clone = room.clone();
+            let name = new_name.to_string();
+            
+            if let Some(runtime) = &self.runtime {
+                runtime.spawn(async move {
+                    // Use LocalParticipant.set_metadata to update username
+                    // This triggers RoomEvent::ParticipantMetadataChanged on other clients
+                    let metadata = serde_json::json!({
+                        "username": name
+                    }).to_string();
+                    
+                    if let Err(e) = room_clone.local_participant().set_metadata(metadata).await {
+                        godot_error!("Failed to update username: {:?}", e);
+                    } else {
+                        godot_print!("Username updated to: {}", name);
+                    }
+                });
+            }
+        } else {
+            godot_warn!("Cannot update username: not connected to room");
+        }
+    }
+    #[func]
+    pub fn get_local_identity(&self) -> GString {
+        if let Some(room) = self.room.lock().unwrap().as_ref() {
+            return room.local_participant().identity().to_string().into();
+        }
+        "local".into()
     }
 }
 
