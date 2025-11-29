@@ -2,6 +2,18 @@
 """
 LiveKit Access Token Generator - Multi-Client Version
 Generates tokens for multiple participants
+
+IMPORTANT: For Godot multiplayer integration
+-------------------------------------------
+The participant ID (used as the 'sub' claim in the JWT) MUST match the Nakama user_id
+for proper position tracking in the LiveKit UI. 
+
+To get your Nakama user_id:
+1. Connect to Nakama in Godot
+2. Check the console output or LiveKit UI hint for your user_id (e.g., "abc123xyz")  
+3. Use that exact ID as the participant name when generating tokens
+
+Example: generate_token("test-room", "abc123xyz")
 """
 
 import jwt
@@ -17,6 +29,7 @@ ROOM_NAME = "test-room"
 TOKEN_VALIDITY_HOURS = 24
 
 # Participant names for multi-client testing
+# NOTE: Replace these with actual Nakama user_ids for position tracking
 PARTICIPANTS = ["client-1", "client-2", "client-3"]
 
 def generate_token(room: str, participant: str):
