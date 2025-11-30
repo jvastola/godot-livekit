@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 godot = "0.2.2"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 rand = "0.8"
-livekit = { version = "0.7.25", features = ["native-tls"] }
+livekit = { version = "0.7.25", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3"
 serde_json = "1.0"
 
