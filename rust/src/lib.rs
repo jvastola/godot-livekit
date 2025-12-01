@@ -1,5 +1,5 @@
 use godot::prelude::*;
-use godot::init::InitLevel;
+
 
 mod audio_handler;
 mod livekit_client;
@@ -11,16 +11,9 @@ unsafe impl ExtensionLibrary for LiveKitExtension {}
 
 #[cfg(target_os = "android")]
 #[no_mangle]
-pub unsafe extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut std::ffi::c_void) -> jni::sys::jint {
-    android_logger::init_once(
-        android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
-    );
-    log::info!("JNI_OnLoad called");
-    
-    let vm = unsafe { jni::JavaVM::from_raw(vm).unwrap() };
-    livekit::webrtc::android::initialize_android(&vm);
-    
-    log::info!("LiveKit Android globals initialized");
-    
+pub unsafe extern "system" fn JNI_OnLoad(_vm: *mut jni::sys::JavaVM, _: *mut std::ffi::c_void) -> jni::sys::jint {
+    // Skip explicit WebRTC init - causes SIGTRAP in jni_zero::InitVM on Quest 3 during lib load
+    // Godot JNI VM is ready; LiveKit will init lazily on first use
+    log::info!("JNI_OnLoad: Skipped WebRTC init to avoid crash");
     jni::sys::JNI_VERSION_1_6
 }

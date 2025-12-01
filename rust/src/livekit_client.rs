@@ -56,13 +56,23 @@ impl INode for LiveKitManager {
     }
 
     fn ready(&mut self) {
-        // Create tokio runtime
+        // Create tokio runtime - single-threaded on Android to avoid JNI thread attachment crashes
         self.runtime = Some(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create tokio runtime"),
+            if cfg!(target_os = "android") {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to create tokio runtime")
+            } else {
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to create tokio runtime")
+            }
         );
+
+        #[cfg(target_os = "android")]
+        log::info!("LiveKitManager::ready: Relying on lazy WebRTC init (JNI_OnLoad skipped crash fix)");
     }
 
     fn process(&mut self, _delta: f64) {

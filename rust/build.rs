@@ -9,7 +9,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/");
     
     // Determine output library name and extension
-    let (lib_name, lib_ext) = match target_os.as_str() {
+    let (lib_name, _lib_ext) = match target_os.as_str() {
         "windows" => ("godot_livekit.dll", "dll"),
         "macos" => ("libgodot_livekit.dylib", "dylib"),
         "linux" | "android" => ("libgodot_livekit.so", "so"),
