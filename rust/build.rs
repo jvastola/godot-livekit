@@ -6,6 +6,16 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let profile = env::var("PROFILE").unwrap();
     
+    // Configure JNI symbols for Android builds
+    // This is CRITICAL for Android: exports only necessary WebRTC JNI symbols
+    // and prevents jni_zero.JniInit missing errors
+    #[cfg(target_os = "android")]
+    {
+        println!("cargo:warning=Configuring JNI symbols for Android build...");
+        webrtc_sys_build::configure_jni_symbols();
+        println!("cargo:warning=JNI symbols configured successfully");
+    }
+    
     println!("cargo:rerun-if-changed=src/");
     
     // Determine output library name and extension
