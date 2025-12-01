@@ -179,6 +179,8 @@ impl LiveKitManager {
 
     #[func]
     pub fn connect_to_room(&mut self, url: GString, token: GString) {
+        godot_print!("LiveKit: connect_to_room called - URL: {}, Token length: {}", url, token.to_string().len());
+        
         let url = url.to_string();
         let token = token.to_string();
 
@@ -197,7 +199,9 @@ impl LiveKitManager {
         let mic_sample_rate = self.mic_sample_rate;
 
         if let Some(runtime) = &self.runtime {
+            godot_print!("LiveKit: Runtime found, spawning connection task...");
             runtime.spawn(async move {
+                godot_print!("LiveKit: Connection task started - Connecting to {}", url);
                 let (room, mut room_events) = match Room::connect(&url, &token, RoomOptions::default()).await {
                     Ok(res) => res,
                     Err(e) => {

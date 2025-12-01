@@ -14,7 +14,7 @@ unsafe impl ExtensionLibrary for LiveKitExtension {}
 pub unsafe extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut std::ffi::c_void) -> jni::sys::jint {
     // CRITICAL: Initialize Android JVM for LiveKit WebRTC
     // Without this, Room::connect() will hang indefinitely on Android
-    log::info!("JNI_OnLoad: Initializing Android JVM for LiveKit WebRTC");
+    godot_print!("🔧 JNI_OnLoad: Initializing Android JVM for LiveKit WebRTC");
     
     // Convert raw pointer to JavaVM reference
     // SAFETY: vm is guaranteed to be valid by the Android runtime
@@ -24,6 +24,17 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut std:
     // This MUST be called before any LiveKit/WebRTC operations on Android
     livekit::webrtc::android::initialize_android(&java_vm);
     
-    log::info!("JNI_OnLoad: Android JVM initialized successfully");
+    godot_print!("✅ JNI_OnLoad: Android JVM initialized successfully");
     jni::sys::JNI_VERSION_1_6
+}
+
+// Android WebRTC codec workaround
+// The WebRTC Android library checks for AV1 codec support by calling this function.
+// Without this export, the Java side may crash or fail to initialize.
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+#[no_mangle]
+pub extern "C" fn Java_org_webrtc_LibaomAv1Decoder_nativeIsSupported() -> bool {
+    godot_print!("🎥 WebRTC: AV1 decoder probe (returning true)");
+    true
 }
