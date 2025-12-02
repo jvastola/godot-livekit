@@ -15,7 +15,7 @@ config/description="LiveKit voice chat demo using Rust GDExtension.
 Real-time audio streaming with multiple participants."
 config/tags=PackedStringArray("demo", "network", "livekit", "voice-chat")
 run/main_scene="res://demo/GDExtensionTest.tscn"
-config/features=PackedStringArray("4.4")
+config/features=PackedStringArray("4.6")
 
 [audio]
 

@@ -171,7 +171,7 @@ func _on_auto_connect_pressed():
 	
 	var url = "https://cloud-api.livekit.io/api/sandbox/connection-details"
 	var headers = [
-		"X-Sandbox-ID: godot-247cr9",
+		"X-Sandbox-ID: godotchat-289pai",
 		"Content-Type: application/json"
 	]
 	var body = JSON.stringify({
