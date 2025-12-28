@@ -170,7 +170,7 @@ func _on_hear_audio_toggled(button_pressed: bool):
 
 func _update_frequency_bands():
 	# Divide buffer into frequency bands and calculate average amplitude
-	var band_size = audio_buffer.size() / frequency_bands.size()
+	var band_size = float(audio_buffer.size()) / frequency_bands.size()
 	if band_size == 0:
 		return
 	
