@@ -169,12 +169,22 @@ impl LiveKitManager {
             let _ = tx.send(());
         }
         
+        // Check if we were connected before clearing state
+        let was_connected = *self.is_connected.lock().unwrap();
+        
         // Clear channels and room
         self.audio_sender = None;
         self.event_receiver = None;
         *self.room.lock().unwrap() = None;
         
         *self.is_connected.lock().unwrap() = false;
+        
+        // Emit room_disconnected synchronously AFTER clearing state.
+        // The async task also sends RoomDisconnected but we will never
+        // receive it since we just dropped the event_receiver above.
+        if was_connected {
+            self.base_mut().emit_signal("room_disconnected", &[]);
+        }
     }
 
     #[func]
