@@ -320,6 +320,21 @@ impl LiveKitManager {
                                     event_tx
                                         .send(InternalEvent::ParticipantJoined(p.identity().to_string()))
                                         .ok();
+                                        
+                                    // Make sure we grab their metadata immediately if they have it
+                                    let metadata = p.metadata();
+                                    if !metadata.is_empty() {
+                                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&metadata) {
+                                            if let Some(username) = json.get("username").and_then(|v| v.as_str()) {
+                                                event_tx
+                                                    .send(InternalEvent::ParticipantMetadataChanged(
+                                                        p.identity().to_string(),
+                                                        username.to_string(),
+                                                    ))
+                                                    .ok();
+                                            }
+                                        }
+                                    }
                                 }
                                 RoomEvent::ParticipantDisconnected(p) => {
                                     event_tx
